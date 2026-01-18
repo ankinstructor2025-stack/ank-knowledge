@@ -16,7 +16,6 @@ const auth = getAuth(app);
 
 /**
  * ★ Cloud Run のURL（末尾スラッシュなし）
- * /pricing が動いたURLのホスト部分を入れる
  */
 const API_BASE = "https://ank-admin-api-986862757498.asia-northeast1.run.app";
 
@@ -47,7 +46,7 @@ const initContractBtn = $("initContractBtn");
 const openBillingBtn = $("openBillingBtn");
 
 const seatLimitSelect = $("seatLimitSelect");
-const knowledgeCountInput = $("knowledgeCountInput");
+const knowledgeCountSelect = $("knowledgeCountSelect");
 const saveContractBtn = $("saveContractBtn"); // ※APIがあれば有効化できる
 
 // KPIs
@@ -152,9 +151,18 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
 // ===== Pricing logic =====
 function normalizePricing(p) {
   // 防御的に整形（想定キーが無いときでも落ちないようにする）
+  const seats = Array.isArray(p?.seats) ? p.seats : [];
+
+  // knowledge_count: [{value,label,monthly_price}] を優先
+  const knowledge_count = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
+
+  // 旧形式のフォールバック（残っていてもOK）
+  const legacyKnowledge = p?.knowledge || { base_included: 1, extra_monthly_fee: 0 };
+
   return {
-    seats: Array.isArray(p?.seats) ? p.seats : [],
-    knowledge: p?.knowledge || { base_included: 1, extra_monthly_fee: 0 },
+    seats,
+    knowledge_count,
+    knowledge: legacyKnowledge,
     search_limit: p?.search_limit || { per_user_per_day: 0, note: "" },
     poc: p?.poc || null
   };
@@ -171,15 +179,39 @@ function getBaseFeeFromPricing(seatLimit) {
     .filter(x => Number.isFinite(x.seat_limit))
     .sort((a, b) => a.seat_limit - b.seat_limit);
 
-  // seatLimitが一致する定義があればそれを優先
   const exact = seats.find(s => s.seat_limit === Number(seatLimit));
   if (exact) return exact.monthly_fee ?? null;
 
-  // 無ければ「seatLimit以下で最初に超える枠」を選ぶ（保険）
   for (const s of seats) {
     if (Number(seatLimit) <= s.seat_limit) return s.monthly_fee ?? null;
   }
   return null;
+}
+
+function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
+  // 新形式 knowledge_count を最優先
+  if (pricing?.knowledge_count?.length) {
+    const k = pricing.knowledge_count
+      .map(x => ({
+        value: Number(x.value),
+        monthly_price: Number(x.monthly_price),
+        label: x.label
+      }))
+      .filter(x => Number.isFinite(x.value))
+      .sort((a, b) => a.value - b.value);
+
+    const hit = k.find(x => x.value === Number(knowledgeCount));
+    if (hit) return Number.isFinite(hit.monthly_price) ? hit.monthly_price : 0;
+
+    // 定義外は「最大定義値」に丸めない（危険なので）→ null
+    return null;
+  }
+
+  // フォールバック（旧形式）
+  const baseIncluded = Number(pricing?.knowledge?.base_included ?? 1);
+  const extraUnit = Number(pricing?.knowledge?.extra_monthly_fee ?? 0);
+  const extraCount = Math.max(0, Number(knowledgeCount) - baseIncluded);
+  return extraCount * extraUnit;
 }
 
 function computeDerived(contractLike) {
@@ -196,16 +228,16 @@ function computeDerived(contractLike) {
   const knowledgeCount = Number(contractLike.knowledge_count || 1);
 
   const baseFee = getBaseFeeFromPricing(seatLimit);
-
-  const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
-  const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
-  const extraCount = Math.max(0, knowledgeCount - baseIncluded);
-  const extraKnowledgeFee = extraCount * extraUnit;
+  const extraKnowledgeFee = getKnowledgeMonthlyPriceFromPricing(knowledgeCount);
 
   const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
   const searchLimitPerDay = seatLimit && perUser ? seatLimit * perUser : null;
 
-  const total = (baseFee === null) ? null : (Number(baseFee) + Number(extraKnowledgeFee || 0));
+  const total =
+    (baseFee === null || extraKnowledgeFee === null)
+      ? null
+      : (Number(baseFee) + Number(extraKnowledgeFee));
+
   return { baseFee, extraKnowledgeFee, total, searchLimitPerDay };
 }
 
@@ -217,6 +249,8 @@ function renderPricing() {
     pricingPoc.textContent = "-";
     seatLimitSelect.innerHTML = "";
     seatLimitSelect.disabled = true;
+    knowledgeCountSelect.innerHTML = "";
+    knowledgeCountSelect.disabled = true;
     return;
   }
 
@@ -238,10 +272,35 @@ function renderPricing() {
     return `<tr><td>${escapeHtml(lim)}</td><td>${escapeHtml(fee)}</td><td class="muted">${escapeHtml(note)}</td></tr>`;
   }).join("");
 
-  // knowledge
-  const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
-  const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
-  pricingKnowledge.textContent = `基本に含む: ${baseIncluded} / 追加: ${yen(extraUnit)} / 月`;
+  // knowledge pricing display (新形式)
+  if (pricing.knowledge_count?.length) {
+    const krows = pricing.knowledge_count
+      .map(k => ({
+        value: Number(k.value),
+        label: k.label ?? `${k.value}`,
+        monthly_price: Number(k.monthly_price ?? 0)
+      }))
+      .filter(x => Number.isFinite(x.value))
+      .sort((a, b) => a.value - b.value);
+
+    pricingKnowledge.textContent =
+      krows.map(x => `${x.label}: ${yen(x.monthly_price)}/月`).join(" / ");
+
+    // knowledge select options
+    knowledgeCountSelect.innerHTML = "";
+    for (const k of krows) {
+      const opt = document.createElement("option");
+      opt.value = String(k.value);
+      opt.textContent = k.label || `${k.value}ナレッジ`;
+      opt.dataset.monthlyPrice = String(Number.isFinite(k.monthly_price) ? k.monthly_price : 0);
+      knowledgeCountSelect.appendChild(opt);
+    }
+    knowledgeCountSelect.disabled = false;
+  } else {
+    pricingKnowledge.textContent = "knowledge_count が pricing.json にありません";
+    knowledgeCountSelect.innerHTML = "";
+    knowledgeCountSelect.disabled = true;
+  }
 
   // search limit
   const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
@@ -290,13 +349,17 @@ function renderContract() {
   if (contract?.seat_limit && seatLimitSelect.options.length) {
     seatLimitSelect.value = String(contract.seat_limit);
   }
-  if (contract?.knowledge_count != null) {
-    knowledgeCountInput.value = String(contract.knowledge_count);
+
+  if (contract?.knowledge_count != null && knowledgeCountSelect.options.length) {
+    const v = String(contract.knowledge_count);
+    // pricing定義外の値は危険なので、selectに無ければ先頭に戻す
+    const has = Array.from(knowledgeCountSelect.options).some(o => o.value === v);
+    knowledgeCountSelect.value = has ? v : knowledgeCountSelect.options[0].value;
   }
 
   const derived = computeDerived({
     seat_limit: Number(seatLimitSelect.value || contract?.seat_limit || 0),
-    knowledge_count: Number(knowledgeCountInput.value || contract?.knowledge_count || 1)
+    knowledge_count: Number(knowledgeCountSelect.value || contract?.knowledge_count || 1)
   });
 
   kpiBase.textContent = (derived.baseFee == null) ? "-" : yen(Number(derived.baseFee));
@@ -330,9 +393,19 @@ async function initContract() {
     if (sorted.length) defaultSeat = sorted[0];
   }
 
+  // knowledge_count は pricing の先頭（=最小）に合わせる（危険な値にしない）
+  let defaultKnowledge = 1;
+  if (pricing?.knowledge_count?.length) {
+    const sortedK = pricing.knowledge_count
+      .map(k => Number(k.value))
+      .filter(n => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (sortedK.length) defaultKnowledge = sortedK[0];
+  }
+
   const payload = {
     seat_limit: defaultSeat,
-    knowledge_count: 1,
+    knowledge_count: defaultKnowledge,
     status: "active",
     payment_method_configured: false
   };
@@ -342,7 +415,7 @@ async function initContract() {
 }
 
 seatLimitSelect.addEventListener("change", () => renderContract());
-knowledgeCountInput.addEventListener("input", () => renderContract());
+knowledgeCountSelect.addEventListener("change", () => renderContract());
 
 saveContractBtn.addEventListener("click", async () => {
   alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");

@@ -119,8 +119,8 @@
         </div>
         <div class="col">
           <label>ナレッジ数（knowledge_count）</label>
-          <input id="knowledgeCountInput" type="number" min="1" step="1" value="1" />
-          <div class="muted">※ 1ナレッジを含み、追加分は月額課金（pricing.json）</div>
+          <select id="knowledgeCountSelect" disabled></select>
+          <div class="muted">※ 選択肢は pricing.json から読み取ります（無制限は用意しません）</div>
         </div>
         <div class="col" style="align-self:end;">
           <button id="saveContractBtn" class="primary" disabled>契約内容を保存</button>
