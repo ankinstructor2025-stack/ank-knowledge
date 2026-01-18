@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ナレッジ検索システム 管理者ログイン | ANK（AI Knowledge）</title>
+  <style>
+    :root{
+      --bg:#0b0f17; --panel:#121a27; --line:#223049;
+      --text:#e8eefc; --muted:#a9b4cc; --accent:#7aa2ff;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 800px at 20% 0%, rgba(122,162,255,.18), transparent 60%),
+        radial-gradient(900px 700px at 90% 10%, rgba(72,213,151,.12), transparent 55%),
+        var(--bg);
+      min-height:100vh;
+      display:grid;
+      place-items:center;
+      padding:24px;
+    }
+    .card{
+      width:min(560px, 100%);
+      background: linear-gradient(180deg, rgba(18,26,39,.92), rgba(15,22,34,.92));
+      border:1px solid var(--line);
+      border-radius:22px;
+      box-shadow: var(--shadow);
+      padding:22px;
+    }
+    h1{margin:0; font-size:18px; letter-spacing:.02em}
+    h2{margin:6px 0 0; font-size:14px; color:var(--muted); font-weight:600}
+    .brand{margin-top:10px; color:var(--muted); font-size:12px}
+    .hr{height:1px; background:var(--line); margin:16px 0}
+    .btn{
+      width:100%;
+      border:1px solid rgba(122,162,255,.55);
+      background: rgba(122,162,255,.16);
+      color:var(--text);
+      padding:12px 14px;
+      border-radius:14px;
+      cursor:pointer;
+      font-size:14px;
+    }
+    .btn:disabled{opacity:.55; cursor:not-allowed}
+    .hint{margin-top:10px; font-size:12px; color:var(--muted); line-height:1.6}
+    .msg{margin-top:12px; font-size:13px}
+    code{background: rgba(15,22,34,.6); border:1px solid var(--line); padding:2px 6px; border-radius:8px; color:var(--text)}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>ナレッジ検索システム</h1>
+    <h2>管理者ログイン</h2>
+    <div class="brand">by ANK（AI Knowledge）</div>
+
+    <div class="hr"></div>
+
+    <button id="btnLogin" class="btn" type="button">Googleでログイン</button>
+    <div id="msg" class="msg"></div>
+
+    <div class="hint">
+      ・この画面は管理者向けです。<br>
+    </div>
+  </main>
+
+  <script type="module" src="./login.js"></script>
+</body>
+</html>
