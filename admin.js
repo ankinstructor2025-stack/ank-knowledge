@@ -4,6 +4,13 @@ import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/fi
 
 /**
  * ★ login.js と同じ firebaseConfig に置き換え
+ * 例:
+ * const firebaseConfig = {
+ *   apiKey: "...",
+ *   authDomain: "...",
+ *   projectId: "...",
+ *   appId: "..."
+ * };
  */
 const firebaseConfig = {
   // apiKey: "...",
@@ -15,8 +22,11 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// ★ Cloud Run のURLに置き換え
-const API_BASE = "https://YOUR_CLOUD_RUN_DOMAIN";
+/**
+ * ★ Cloud Run のURL（末尾スラッシュなし）
+ * /pricing が動いたURLのホスト部分を入れる
+ */
+const API_BASE = "https://ank-admin-api-986862757498.asia-northeast1.run.app";
 
 // ===== DOM =====
 const $ = (id) => document.getElementById(id);
@@ -87,6 +97,7 @@ function hideBanner() {
   bannerEl.hidden = true;
   bannerEl.textContent = "";
 }
+
 function setActiveTab(tabName) {
   const isContract = tabName === "contract";
   tabContract.setAttribute("aria-selected", String(isContract));
@@ -256,7 +267,6 @@ function renderPricing() {
   seatLimitSelect.innerHTML = "";
   for (const r of rows) {
     if (!Number.isFinite(Number(r.seat_limit))) continue;
-    // 要相談枠は選択できても良いが、ここは disabled でも良い
     const isConsult = (r.monthly_fee == null);
     const opt = document.createElement("option");
     opt.value = String(r.seat_limit);
@@ -270,7 +280,6 @@ function renderPricing() {
 }
 
 async function loadPricing() {
-  // APIが GCS(ank-bucket/config/pricing.json) を読んで返す想定
   const p = await apiFetch(`/pricing`, { method: "GET" });
   pricing = normalizePricing(p);
   renderPricing();
@@ -278,17 +287,14 @@ async function loadPricing() {
 
 // ===== Contract =====
 function renderContract() {
-  // badges
   contractBadge.textContent = `contract: ${contract?.contract_id ?? "-"}`;
   statusBadge.textContent = `status: ${contract?.status ?? "-"}`;
 
-  // fields
   contractIdEl.textContent = contract?.contract_id ?? "-";
   contractStatusEl.textContent = contract?.status ?? "-";
   paymentMethodEl.textContent = contract?.payment_method_configured ? "設定済み" : "未設定";
   paidUntilEl.textContent = contract?.paid_until ?? "-";
 
-  // form defaults
   if (contract?.seat_limit && seatLimitSelect.options.length) {
     seatLimitSelect.value = String(contract.seat_limit);
   }
@@ -296,7 +302,6 @@ function renderContract() {
     knowledgeCountInput.value = String(contract.knowledge_count);
   }
 
-  // computed (pricingから算出)
   const derived = computeDerived({
     seat_limit: Number(seatLimitSelect.value || contract?.seat_limit || 0),
     knowledge_count: Number(knowledgeCountInput.value || contract?.knowledge_count || 1)
@@ -307,7 +312,6 @@ function renderContract() {
   kpiMonthly.textContent = (derived.total == null) ? "-" : yen(Number(derived.total));
   kpiSearchLimit.textContent = (derived.searchLimitPerDay == null) ? "-" : `${derived.searchLimitPerDay.toLocaleString("ja-JP")}回/日`;
 
-  // banner (statusだけで警告/停止の表示)
   hideBanner();
   if (contract?.status === "grace") {
     showBanner("warn", "支払い確認が取れていません（猶予期間）。検索画面に警告を表示します。");
@@ -316,8 +320,6 @@ function renderContract() {
     showBanner("bad", "契約が停止しています。検索は停止（または強い警告）対象です。");
   }
 
-  // 保存ボタン（APIがあれば有効化）
-  // ここでは「pricing読めた」かつ「contractがある」ならONにする
   saveContractBtn.disabled = !(pricing && contract);
 }
 
@@ -327,7 +329,6 @@ async function loadContract() {
 }
 
 async function initContract() {
-  // 初期値：pricingから最小枠を選ぶ
   let defaultSeat = 10;
   if (pricing?.seats?.length) {
     const sorted = pricing.seats
@@ -348,11 +349,9 @@ async function initContract() {
   await loadContract();
 }
 
-// 契約フォーム変更時にKPI更新
 seatLimitSelect.addEventListener("change", () => renderContract());
 knowledgeCountInput.addEventListener("input", () => renderContract());
 
-// 保存はAPI未確定なので、ボタンは残すが処理は警告にしておく
 saveContractBtn.addEventListener("click", async () => {
   alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");
 });
@@ -401,7 +400,6 @@ function renderUsers() {
     const opsTd = tr.querySelector("td:last-child");
 
     if (myRole === "admin") {
-      // role toggle
       const roleBtn = document.createElement("button");
       roleBtn.textContent = (role === "admin") ? "memberにする" : "adminにする";
       roleBtn.style.marginRight = "6px";
@@ -415,7 +413,6 @@ function renderUsers() {
         await loadUsers();
       });
 
-      // disable/enable
       const disableBtn = document.createElement("button");
       disableBtn.className = (status === "disabled") ? "" : "danger";
       disableBtn.textContent = (status === "disabled") ? "有効化" : "無効化";
