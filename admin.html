@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", sans-serif; margin: 0; }
+    header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+    .left { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .right { display:flex; gap:8px; align-items:center; }
+    .badge { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
+    .container { padding: 16px; max-width: 980px; margin: 0 auto; }
+    .tabs { display:flex; gap:8px; border-bottom:1px solid #eee; margin-bottom: 12px; }
+    .tabbtn { padding: 10px 12px; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; }
+    .tabbtn[aria-selected="true"] { border-bottom-color: #333; font-weight: 600; }
+    .panel { padding: 8px 0; }
+    .card { border: 1px solid #eee; border-radius: 12px; padding: 12px; margin: 12px 0; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .col { flex: 1 1 280px; }
+    label { display:block; font-size: 12px; color:#555; margin-bottom: 6px; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px; }
+    button { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; background: #fff; cursor: pointer; }
+    button.primary { border-color:#333; }
+    button.danger { border-color:#c33; color:#c33; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { text-align:left; padding: 10px 8px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
+    th { font-size: 12px; color: #555; }
+    .muted { color:#666; font-size: 12px; }
+    .banner { border:1px solid #eee; border-radius: 12px; padding: 10px 12px; margin: 12px 0; }
+    .banner.warn { border-color: #f0c36d; }
+    .banner.bad { border-color: #e28b8b; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="left">
+      <strong>Admin</strong>
+      <span id="contractBadge" class="badge">contract: -</span>
+      <span id="statusBadge" class="badge">status: -</span>
+      <span id="roleBadge" class="badge">role: -</span>
+    </div>
+    <div class="right">
+      <span id="userEmail" class="muted">-</span>
+      <button id="logoutBtn">ログアウト</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="banner" class="banner" hidden></div>
+
+    <nav class="tabs" role="tablist" aria-label="Admin tabs">
+      <button class="tabbtn" role="tab" id="tab-contract" aria-controls="panel-contract" aria-selected="true">契約</button>
+      <button class="tabbtn" role="tab" id="tab-users" aria-controls="panel-users" aria-selected="false">ユーザー</button>
+    </nav>
+
+    <section id="panel-contract" class="panel" role="tabpanel" aria-labelledby="tab-contract">
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <div><strong>契約情報</strong></div>
+            <div class="muted">支払い状態を基準に、検索画面の警告/停止を制御します。</div>
+          </div>
+          <div class="col" style="text-align:right;">
+            <button id="refreshContractBtn">更新</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px;">
+          <div class="col">
+            <div class="muted">契約ID</div>
+            <div id="contractId" class="mono">-</div>
+          </div>
+          <div class="col">
+            <div class="muted">ステータス</div>
+            <div id="contractStatus">-</div>
+          </div>
+          <div class="col">
+            <div class="muted">支払い方法</div>
+            <div id="paymentMethod">-</div>
+          </div>
+          <div class="col">
+            <div class="muted">有効期限</div>
+            <div id="paidUntil">-</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px;">
+          <div class="col">
+            <div class="muted">人数枠</div>
+            <div id="seatLimit">-</div>
+          </div>
+          <div class="col">
+            <div class="muted">ナレッジ数</div>
+            <div id="knowledgeCount">-</div>
+          </div>
+          <div class="col">
+            <div class="muted">検索上限（参考）</div>
+            <div id="searchLimit">-</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:12px;">
+          <div class="col">
+            <button id="initContractBtn" class="primary">契約を初期化（初回）</button>
+            <div class="muted">※ 初回のみ。存在する場合は失敗してOK。</div>
+          </div>
+          <div class="col">
+            <button id="openBillingBtn">支払い設定ページへ</button>
+            <div class="muted">※ 実体は外部決済ページURLに遷移。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-users" class="panel" role="tabpanel" aria-labelledby="tab-users" hidden>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <div><strong>ユーザー管理</strong></div>
+            <div class="muted">admin のみ追加/権限変更/無効化ができます。</div>
+          </div>
+          <div class="col" style="text-align:right;">
+            <button id="refreshUsersBtn">更新</button>
+          </div>
+        </div>
+
+        <div id="userOps" class="row" style="margin-top:12px;" hidden>
+          <div class="col">
+            <label>メールアドレス</label>
+            <input id="newUserEmail" type="email" placeholder="user@example.com" />
+          </div>
+          <div class="col">
+            <label>権限</label>
+            <select id="newUserRole">
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="col" style="align-self:end;">
+            <button id="addUserBtn" class="primary">ユーザー追加</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px; overflow:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>メール</th>
+                <th>role</th>
+                <th>status</th>
+                <th>最終ログイン</th>
+                <th style="width: 240px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="usersTbody">
+              <tr><td colspan="5" class="muted">読み込み中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="muted" style="margin-top:10px;">
+          ガード：最後の admin を member に変更／無効化はできません（管理が詰まるのを防ぐため）。
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>
