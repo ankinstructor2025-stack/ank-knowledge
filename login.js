@@ -14,45 +14,58 @@ const firebaseConfig = {
   appId: "1:707356972093:web:03d20f1c1e5948150f8654"
 };
 
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+/* ===== Google プロバイダ設定 ===== */
+const provider = new GoogleAuthProvider();
+
+// ★ ここが重要：毎回アカウント選択を強制
+provider.setCustomParameters({
+  prompt: "select_account",
+});
+
+/* ===== UI ヘルパー ===== */
+const msgEl = document.getElementById("msg");
+const btnEl = document.getElementById("btnLogin");
+
 function setMsg(text) {
-  const el = document.getElementById("msg");
-  if (el) el.textContent = text;
+  msgEl.textContent = text;
 }
 
 function disableBtn(disabled) {
-  const btn = document.getElementById("btnLogin");
-  if (btn) btn.disabled = disabled;
+  btnEl.disabled = disabled;
 }
 
-try {
-  // firebaseConfig 未設定チェック
-  if (!firebaseConfig || !firebaseConfig.apiKey) {
-    setMsg("firebaseConfig が未設定です（Firebase コンソールの設定を login.js に貼り付けてください）");
-    disableBtn(true);
-  } else {
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
-
-    document.getElementById("btnLogin").addEventListener("click", async () => {
-      disableBtn(true);
-      setMsg("ログインしています…");
-      try {
-        const result = await signInWithPopup(auth, provider);
-        const user = result.user;
-        setMsg(`ログイン成功：${user.email}`);
-        // TODO: ここで管理画面へ遷移
-        // location.href = "./admin.html";
-      } catch (e) {
-        console.error(e);
-        setMsg("ログインに失敗しました（ポップアップ許可、またはFirebase設定を確認してください）");
-      } finally {
-        disableBtn(false);
-      }
-    });
-  }
-} catch (e) {
-  console.error(e);
-  setMsg("初期化に失敗しました（firebaseConfig の貼り付け内容を確認してください）");
+/* ===== ログイン処理 ===== */
+btnEl.addEventListener("click", async () => {
+  setMsg("");
   disableBtn(true);
-}
+
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+
+    // ここでは「初回かどうか」は判定しない
+    // → 次画面で ANK 側の状態を確認する
+    console.log("login user:", user.email);
+
+    // 次の画面へ
+    location.href = "./admin.html";
+
+  } catch (err) {
+    console.error(err);
+
+    // ポップアップブロック専用メッセージ
+    if (
+      err.code === "auth/popup-blocked" ||
+      err.code === "auth/popup-closed-by-user"
+    ) {
+      setMsg("ログインできませんでした。ポップアップがブロックされていないか確認してください。");
+    } else {
+      setMsg("ログインに失敗しました。時間をおいて再度お試しください。");
+    }
+  } finally {
+    disableBtn(false);
+  }
+});
