@@ -71,8 +71,8 @@ const usersTbody = $("usersTbody");
 
 // ===== State =====
 let currentUser = null;
-let pricing = null;   // pricing.json
-let contract = null;  // contract json
+let pricing = null;   // pricing.json（整形済み）
+let contract = null;  // contract json（未契約なら null）
 let users = [];
 let myRole = "member";
 
@@ -101,9 +101,10 @@ tabUsers.addEventListener("click", () => setActiveTab("users"));
 
 function yen(n) {
   if (n === null || n === undefined) return "-";
-  if (typeof n !== "number") return String(n);
+  if (typeof n !== "number" || Number.isNaN(n)) return "-";
   return n.toLocaleString("ja-JP") + "円";
 }
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -112,6 +113,7 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 function fmtLastLogin(v) {
   if (!v) return "-";
   try {
@@ -121,6 +123,11 @@ function fmtLastLogin(v) {
   } catch {
     return String(v);
   }
+}
+
+function isNotFoundError(e) {
+  // apiFetch は "API error 404: ..." の形式
+  return String(e?.message || "").includes("API error 404");
 }
 
 // ===== API =====
@@ -143,6 +150,7 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
     const text = await res.text().catch(() => "");
     throw new Error(`API error ${res.status}: ${text}`);
   }
+
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) return res.json();
   return null;
@@ -150,7 +158,6 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
 
 // ===== Pricing logic =====
 function normalizePricing(p) {
-  // 防御的に整形（想定キーが無いときでも落ちないようにする）
   const seats = Array.isArray(p?.seats) ? p.seats : [];
 
   // knowledge_count: [{value,label,monthly_price}] を優先
@@ -170,7 +177,8 @@ function normalizePricing(p) {
 
 function getBaseFeeFromPricing(seatLimit) {
   if (!pricing) return null;
-  const seats = pricing.seats
+
+  const rows = pricing.seats
     .map(x => ({
       seat_limit: Number(x.seat_limit),
       monthly_fee: x.monthly_fee,
@@ -179,11 +187,11 @@ function getBaseFeeFromPricing(seatLimit) {
     .filter(x => Number.isFinite(x.seat_limit))
     .sort((a, b) => a.seat_limit - b.seat_limit);
 
-  const exact = seats.find(s => s.seat_limit === Number(seatLimit));
+  const exact = rows.find(r => r.seat_limit === Number(seatLimit));
   if (exact) return exact.monthly_fee ?? null;
 
-  for (const s of seats) {
-    if (Number(seatLimit) <= s.seat_limit) return s.monthly_fee ?? null;
+  for (const r of rows) {
+    if (Number(seatLimit) <= r.seat_limit) return r.monthly_fee ?? null;
   }
   return null;
 }
@@ -191,19 +199,19 @@ function getBaseFeeFromPricing(seatLimit) {
 function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
   // 新形式 knowledge_count を最優先
   if (pricing?.knowledge_count?.length) {
-    const k = pricing.knowledge_count
+    const krows = pricing.knowledge_count
       .map(x => ({
         value: Number(x.value),
-        monthly_price: Number(x.monthly_price),
+        monthly_price: Number(x.monthly_price ?? 0),
         label: x.label
       }))
       .filter(x => Number.isFinite(x.value))
       .sort((a, b) => a.value - b.value);
 
-    const hit = k.find(x => x.value === Number(knowledgeCount));
+    const hit = krows.find(x => x.value === Number(knowledgeCount));
     if (hit) return Number.isFinite(hit.monthly_price) ? hit.monthly_price : 0;
 
-    // 定義外は「最大定義値」に丸めない（危険なので）→ null
+    // 定義外は危険なので null（丸めない）
     return null;
   }
 
@@ -214,24 +222,19 @@ function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
   return extraCount * extraUnit;
 }
 
-function computeDerived(contractLike) {
-  if (!pricing || !contractLike) {
-    return {
-      baseFee: null,
-      extraKnowledgeFee: null,
-      total: null,
-      searchLimitPerDay: null
-    };
+function computeDerived({ seat_limit, knowledge_count }) {
+  if (!pricing) {
+    return { baseFee: null, extraKnowledgeFee: null, total: null, searchLimitPerDay: null };
   }
 
-  const seatLimit = Number(contractLike.seat_limit || 0);
-  const knowledgeCount = Number(contractLike.knowledge_count || 1);
+  const seatLimit = Number(seat_limit || 0);
+  const knowledgeCount = Number(knowledge_count || 1);
 
   const baseFee = getBaseFeeFromPricing(seatLimit);
   const extraKnowledgeFee = getKnowledgeMonthlyPriceFromPricing(knowledgeCount);
 
   const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
-  const searchLimitPerDay = seatLimit && perUser ? seatLimit * perUser : null;
+  const searchLimitPerDay = (seatLimit && perUser) ? (seatLimit * perUser) : null;
 
   const total =
     (baseFee === null || extraKnowledgeFee === null)
@@ -239,6 +242,25 @@ function computeDerived(contractLike) {
       : (Number(baseFee) + Number(extraKnowledgeFee));
 
   return { baseFee, extraKnowledgeFee, total, searchLimitPerDay };
+}
+
+function renderEstimateFromUI() {
+  // 契約が無くても、選択値で見積もりを出す
+  const seatLimit = Number(seatLimitSelect?.value || 0);
+  const knowledgeCount = Number(knowledgeCountSelect?.value || 1);
+
+  const derived = computeDerived({
+    seat_limit: seatLimit,
+    knowledge_count: knowledgeCount
+  });
+
+  kpiBase.textContent = (derived.baseFee == null) ? "-" : yen(Number(derived.baseFee));
+  kpiExtra.textContent = (derived.extraKnowledgeFee == null) ? "-" : yen(Number(derived.extraKnowledgeFee));
+  kpiMonthly.textContent = (derived.total == null) ? "-" : yen(Number(derived.total));
+  kpiSearchLimit.textContent =
+    (derived.searchLimitPerDay == null)
+      ? "-"
+      : `${derived.searchLimitPerDay.toLocaleString("ja-JP")}回/日`;
 }
 
 function renderPricing() {
@@ -255,29 +277,41 @@ function renderPricing() {
   }
 
   // seats table
-  const rows = pricing.seats
+  const seatRows = pricing.seats
     .map(s => ({
-      seat_limit: s.seat_limit,
+      seat_limit: Number(s.seat_limit),
       monthly_fee: s.monthly_fee,
       label: s.label
     }))
-    .sort((a, b) => Number(a.seat_limit) - Number(b.seat_limit));
+    .filter(x => Number.isFinite(x.seat_limit))
+    .sort((a, b) => a.seat_limit - b.seat_limit);
 
-  pricingSeatsTbody.innerHTML = rows.map(r => {
-    const lim = (r.label && r.monthly_fee == null)
-      ? r.label
-      : `${r.seat_limit}人まで`;
+  pricingSeatsTbody.innerHTML = seatRows.map(r => {
+    const lim = (r.label && r.monthly_fee == null) ? r.label : `${r.seat_limit}人まで`;
     const fee = (r.monthly_fee == null) ? "-" : yen(Number(r.monthly_fee));
     const note = (r.monthly_fee == null) ? "個別見積" : "";
     return `<tr><td>${escapeHtml(lim)}</td><td>${escapeHtml(fee)}</td><td class="muted">${escapeHtml(note)}</td></tr>`;
   }).join("");
 
-  // knowledge pricing display (新形式)
+  // seat options
+  seatLimitSelect.innerHTML = "";
+  for (const r of seatRows) {
+    const isConsult = (r.monthly_fee == null);
+    const opt = document.createElement("option");
+    opt.value = String(r.seat_limit);
+    opt.textContent = isConsult
+      ? (r.label || `${r.seat_limit}人以上（要相談）`)
+      : `${r.seat_limit}人まで`;
+    seatLimitSelect.appendChild(opt);
+  }
+  seatLimitSelect.disabled = false;
+
+  // knowledge pricing + options
   if (pricing.knowledge_count?.length) {
     const krows = pricing.knowledge_count
       .map(k => ({
         value: Number(k.value),
-        label: k.label ?? `${k.value}`,
+        label: k.label ?? `${k.value}ナレッジ`,
         monthly_price: Number(k.monthly_price ?? 0)
       }))
       .filter(x => Number.isFinite(x.value))
@@ -286,20 +320,31 @@ function renderPricing() {
     pricingKnowledge.textContent =
       krows.map(x => `${x.label}: ${yen(x.monthly_price)}/月`).join(" / ");
 
-    // knowledge select options
     knowledgeCountSelect.innerHTML = "";
     for (const k of krows) {
       const opt = document.createElement("option");
       opt.value = String(k.value);
-      opt.textContent = k.label || `${k.value}ナレッジ`;
-      opt.dataset.monthlyPrice = String(Number.isFinite(k.monthly_price) ? k.monthly_price : 0);
+      opt.textContent = k.label;
       knowledgeCountSelect.appendChild(opt);
     }
     knowledgeCountSelect.disabled = false;
+
+    // 未契約時の初期値（先頭＝最小）を自然にする
+    if (knowledgeCountSelect.options.length) {
+      knowledgeCountSelect.value = knowledgeCountSelect.options[0].value;
+    }
   } else {
-    pricingKnowledge.textContent = "knowledge_count が pricing.json にありません";
+    // フォールバック表示（旧形式のみのとき）
+    const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
+    const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
+    pricingKnowledge.textContent = `基本に含む: ${baseIncluded} / 追加: ${yen(extraUnit)} / 月`;
+
     knowledgeCountSelect.innerHTML = "";
-    knowledgeCountSelect.disabled = true;
+    const opt = document.createElement("option");
+    opt.value = String(baseIncluded);
+    opt.textContent = `${baseIncluded}ナレッジ`;
+    knowledgeCountSelect.appendChild(opt);
+    knowledgeCountSelect.disabled = false;
   }
 
   // search limit
@@ -313,27 +358,15 @@ function renderPricing() {
   } else {
     pricingPoc.textContent = "-";
   }
-
-  // seat options
-  seatLimitSelect.innerHTML = "";
-  for (const r of rows) {
-    if (!Number.isFinite(Number(r.seat_limit))) continue;
-    const isConsult = (r.monthly_fee == null);
-    const opt = document.createElement("option");
-    opt.value = String(r.seat_limit);
-    opt.textContent = isConsult
-      ? (r.label || `${r.seat_limit}人以上（要相談）`)
-      : `${r.seat_limit}人まで`;
-    opt.dataset.isConsult = isConsult ? "1" : "0";
-    seatLimitSelect.appendChild(opt);
-  }
-  seatLimitSelect.disabled = false;
 }
 
 async function loadPricing() {
   const p = await apiFetch(`/pricing`, { method: "GET" });
   pricing = normalizePricing(p);
   renderPricing();
+
+  // pricing が揃ったら、未契約でも初期見積もりを出す（select初期値で）
+  renderEstimateFromUI();
 }
 
 // ===== Contract =====
@@ -346,26 +379,18 @@ function renderContract() {
   paymentMethodEl.textContent = contract?.payment_method_configured ? "設定済み" : "未設定";
   paidUntilEl.textContent = contract?.paid_until ?? "-";
 
+  // 契約値があれば select に反映
   if (contract?.seat_limit && seatLimitSelect.options.length) {
     seatLimitSelect.value = String(contract.seat_limit);
   }
-
   if (contract?.knowledge_count != null && knowledgeCountSelect.options.length) {
     const v = String(contract.knowledge_count);
-    // pricing定義外の値は危険なので、selectに無ければ先頭に戻す
     const has = Array.from(knowledgeCountSelect.options).some(o => o.value === v);
     knowledgeCountSelect.value = has ? v : knowledgeCountSelect.options[0].value;
   }
 
-  const derived = computeDerived({
-    seat_limit: Number(seatLimitSelect.value || contract?.seat_limit || 0),
-    knowledge_count: Number(knowledgeCountSelect.value || contract?.knowledge_count || 1)
-  });
-
-  kpiBase.textContent = (derived.baseFee == null) ? "-" : yen(Number(derived.baseFee));
-  kpiExtra.textContent = (derived.extraKnowledgeFee == null) ? "-" : yen(Number(derived.extraKnowledgeFee));
-  kpiMonthly.textContent = (derived.total == null) ? "-" : yen(Number(derived.total));
-  kpiSearchLimit.textContent = (derived.searchLimitPerDay == null) ? "-" : `${derived.searchLimitPerDay.toLocaleString("ja-JP")}回/日`;
+  // KPI は select の値で再計算
+  renderEstimateFromUI();
 
   hideBanner();
   if (contract?.status === "grace") {
@@ -378,12 +403,39 @@ function renderContract() {
   saveContractBtn.disabled = !(pricing && contract);
 }
 
-async function loadContract() {
-  contract = await apiFetch(`/contract`, { method: "GET" });
-  renderContract();
+function renderNoContract() {
+  contractBadge.textContent = `contract: -`;
+  statusBadge.textContent = `status: -`;
+
+  contractIdEl.textContent = "-";
+  contractStatusEl.textContent = "-";
+  paymentMethodEl.textContent = "-";
+  paidUntilEl.textContent = "-";
+
+  hideBanner();
+  saveContractBtn.disabled = true;
+
+  // 未契約でも見積もりは出す
+  renderEstimateFromUI();
+}
+
+async function loadContractOrNull() {
+  try {
+    contract = await apiFetch(`/contract`, { method: "GET" });
+    renderContract();
+    return contract;
+  } catch (e) {
+    if (isNotFoundError(e)) {
+      contract = null;
+      renderNoContract();
+      return null;
+    }
+    throw e;
+  }
 }
 
 async function initContract() {
+  // 初期値は pricing の最小に寄せる
   let defaultSeat = 10;
   if (pricing?.seats?.length) {
     const sorted = pricing.seats
@@ -393,7 +445,6 @@ async function initContract() {
     if (sorted.length) defaultSeat = sorted[0];
   }
 
-  // knowledge_count は pricing の先頭（=最小）に合わせる（危険な値にしない）
   let defaultKnowledge = 1;
   if (pricing?.knowledge_count?.length) {
     const sortedK = pricing.knowledge_count
@@ -411,11 +462,16 @@ async function initContract() {
   };
 
   await apiFetch(`/contract/init`, { method: "POST", body: payload });
-  await loadContract();
+  await loadContractOrNull();
 }
 
-seatLimitSelect.addEventListener("change", () => renderContract());
-knowledgeCountSelect.addEventListener("change", () => renderContract());
+// select 変更で即見積もり
+seatLimitSelect.addEventListener("change", () => {
+  renderEstimateFromUI();
+});
+knowledgeCountSelect.addEventListener("change", () => {
+  renderEstimateFromUI();
+});
 
 saveContractBtn.addEventListener("click", async () => {
   alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");
@@ -425,6 +481,7 @@ saveContractBtn.addEventListener("click", async () => {
 function computeMyRole() {
   myRole = "member";
   if (!currentUser) return;
+
   const myEmail = (currentUser.email || "").toLowerCase();
   const me = users.find(u => (u.email || "").toLowerCase() === myEmail);
   if (me && me.role) myRole = me.role;
@@ -499,24 +556,6 @@ function renderUsers() {
   }
 }
 
-function renderEstimateFromUI() {
-  const seatLimit = Number(seatLimitSelect.value);
-  const knowledgeCount = Number(knowledgeCountSelect.value);
-
-  const derived = computeDerived({
-    seat_limit: seatLimit,
-    knowledge_count: knowledgeCount
-  });
-
-  kpiBase.textContent = derived.baseFee != null ? yen(derived.baseFee) : "-";
-  kpiExtra.textContent = derived.extraKnowledgeFee != null ? yen(derived.extraKnowledgeFee) : "-";
-  kpiMonthly.textContent = derived.total != null ? yen(derived.total) : "-";
-  kpiSearchLimit.textContent =
-    derived.searchLimitPerDay != null
-      ? `${derived.searchLimitPerDay.toLocaleString()}回/日`
-      : "-";
-}
-
 async function loadUsers() {
   users = await apiFetch(`/users`, { method: "GET" });
   renderUsers();
@@ -547,7 +586,7 @@ refreshAllBtn.addEventListener("click", async () => {
   try {
     await loadPricing();
     await loadUsers();
-    await loadContract();
+    await loadContractOrNull();
   } catch (e) {
     console.error(e);
     showBanner("bad", `更新に失敗: ${e.message}`);
@@ -603,24 +642,23 @@ addUserBtn.addEventListener("click", async () => {
 // ===== Boot =====
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
-    location.href = "./login.html";
+    location.replace("./login.html");
     return;
   }
+
+  // body を display:none にしている場合でも、ログイン後に必ず表示
+  document.body.style.display = "block";
+
   currentUser = u;
   userEmailEl.textContent = u.email || "-";
 
   setActiveTab("contract");
 
   try {
-    // pricing → users → contract の順（UIが自然）
+    // pricing → users → contract の順
     await loadPricing();
     await loadUsers();
-    if (contract) {
-      await loadContract();
-    } else {
-      // ★ 未契約でも初期値で見積もりを出す
-      renderEstimateFromUI();
-    }
+    await loadContractOrNull();
   } catch (e) {
     console.error(e);
     showBanner("bad", `初期化に失敗: ${e.message}`);
