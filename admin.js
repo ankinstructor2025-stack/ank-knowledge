@@ -2,21 +2,13 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-/**
- * ★ login.js と同じ firebaseConfig に置き換え
- * 例:
- * const firebaseConfig = {
- *   apiKey: "...",
- *   authDomain: "...",
- *   projectId: "...",
- *   appId: "..."
- * };
- */
 const firebaseConfig = {
-  // apiKey: "...",
-  // authDomain: "...",
-  // projectId: "...",
-  // appId: "..."
+  apiKey: "AIza....",
+  authDomain: "....firebaseapp.com",
+  projectId: "....",
+  storageBucket: "....firebasestorage.app",
+  messagingSenderId: "....",
+  appId: "...."
 };
 
 const app = initializeApp(firebaseConfig);
