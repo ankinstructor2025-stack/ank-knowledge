@@ -499,6 +499,24 @@ function renderUsers() {
   }
 }
 
+function renderEstimateFromUI() {
+  const seatLimit = Number(seatLimitSelect.value);
+  const knowledgeCount = Number(knowledgeCountSelect.value);
+
+  const derived = computeDerived({
+    seat_limit: seatLimit,
+    knowledge_count: knowledgeCount
+  });
+
+  kpiBase.textContent = derived.baseFee != null ? yen(derived.baseFee) : "-";
+  kpiExtra.textContent = derived.extraKnowledgeFee != null ? yen(derived.extraKnowledgeFee) : "-";
+  kpiMonthly.textContent = derived.total != null ? yen(derived.total) : "-";
+  kpiSearchLimit.textContent =
+    derived.searchLimitPerDay != null
+      ? `${derived.searchLimitPerDay.toLocaleString()}回/日`
+      : "-";
+}
+
 async function loadUsers() {
   users = await apiFetch(`/users`, { method: "GET" });
   renderUsers();
@@ -597,7 +615,12 @@ onAuthStateChanged(auth, async (u) => {
     // pricing → users → contract の順（UIが自然）
     await loadPricing();
     await loadUsers();
-    await loadContract();
+    if (contract) {
+      await loadContract();
+    } else {
+      // ★ 未契約でも初期値で見積もりを出す
+      renderEstimateFromUI();
+    }
   } catch (e) {
     console.error(e);
     showBanner("bad", `初期化に失敗: ${e.message}`);
