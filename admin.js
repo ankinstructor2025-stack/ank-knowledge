@@ -1,15 +1,9 @@
 // admin.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  signOut
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 /**
- * ★ここをあなたのFirebase設定に置き換え
- * login.js と同じ firebaseConfig を貼るのが安全
+ * ★ login.js と同じ firebaseConfig に置き換え
  */
 const firebaseConfig = {
   // apiKey: "...",
@@ -21,10 +15,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// ★ここを Cloud Run のURLに変更（例：https://xxxx-uc.a.run.app）
+// ★ Cloud Run のURLに置き換え
 const API_BASE = "https://YOUR_CLOUD_RUN_DOMAIN";
 
-// ====== DOM ======
+// ===== DOM =====
 const $ = (id) => document.getElementById(id);
 
 const bannerEl = $("banner");
@@ -40,18 +34,33 @@ const panelUsers = $("panel-users");
 
 const logoutBtn = $("logoutBtn");
 
+// contract display
 const contractIdEl = $("contractId");
 const contractStatusEl = $("contractStatus");
 const paymentMethodEl = $("paymentMethod");
 const paidUntilEl = $("paidUntil");
-const seatLimitEl = $("seatLimit");
-const knowledgeCountEl = $("knowledgeCount");
-const searchLimitEl = $("searchLimit");
 
-const refreshContractBtn = $("refreshContractBtn");
+const refreshAllBtn = $("refreshAllBtn");
 const initContractBtn = $("initContractBtn");
 const openBillingBtn = $("openBillingBtn");
 
+const seatLimitSelect = $("seatLimitSelect");
+const knowledgeCountInput = $("knowledgeCountInput");
+const saveContractBtn = $("saveContractBtn"); // ※APIがあれば有効化できる
+
+// KPIs
+const kpiMonthly = $("kpiMonthly");
+const kpiBase = $("kpiBase");
+const kpiExtra = $("kpiExtra");
+const kpiSearchLimit = $("kpiSearchLimit");
+
+// pricing display
+const pricingSeatsTbody = $("pricingSeatsTbody");
+const pricingKnowledge = $("pricingKnowledge");
+const pricingSearchLimit = $("pricingSearchLimit");
+const pricingPoc = $("pricingPoc");
+
+// users
 const refreshUsersBtn = $("refreshUsersBtn");
 const userOps = $("userOps");
 const newUserEmail = $("newUserEmail");
@@ -59,13 +68,14 @@ const newUserRole = $("newUserRole");
 const addUserBtn = $("addUserBtn");
 const usersTbody = $("usersTbody");
 
-// ====== State ======
+// ===== State =====
 let currentUser = null;
-let contract = null;      // { contract_id, status, payment_method_configured, paid_until, seat_limit, knowledge_count, ... }
-let users = [];           // [{ email, uid, role, status, last_login_at }]
+let pricing = null;   // pricing.json
+let contract = null;  // contract json
+let users = [];
 let myRole = "member";
 
-// ====== UI helpers ======
+// ===== Helpers =====
 function showBanner(kind, text) {
   bannerEl.hidden = false;
   bannerEl.className = "banner";
@@ -77,7 +87,6 @@ function hideBanner() {
   bannerEl.hidden = true;
   bannerEl.textContent = "";
 }
-
 function setActiveTab(tabName) {
   const isContract = tabName === "contract";
   tabContract.setAttribute("aria-selected", String(isContract));
@@ -85,15 +94,38 @@ function setActiveTab(tabName) {
   panelContract.hidden = !isContract;
   panelUsers.hidden = isContract;
 }
-
 tabContract.addEventListener("click", () => setActiveTab("contract"));
 tabUsers.addEventListener("click", () => setActiveTab("users"));
 
-// ====== API ======
+function yen(n) {
+  if (n === null || n === undefined) return "-";
+  if (typeof n !== "number") return String(n);
+  return n.toLocaleString("ja-JP") + "円";
+}
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+function fmtLastLogin(v) {
+  if (!v) return "-";
+  try {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleString();
+  } catch {
+    return String(v);
+  }
+}
+
+// ===== API =====
 async function apiFetch(path, { method = "GET", body = null } = {}) {
   if (!currentUser) throw new Error("not signed in");
 
-  const token = await currentUser.getIdToken(true); // 取得（必要ならキャッシュ可）
+  const token = await currentUser.getIdToken(true);
   const headers = {
     "Authorization": `Bearer ${token}`,
     "Content-Type": "application/json"
@@ -114,89 +146,231 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
   return null;
 }
 
-// ====== contract ======
-function renderContract() {
-  if (!contract) {
-    contractBadge.textContent = "contract: -";
-    statusBadge.textContent = "status: -";
-    contractIdEl.textContent = "-";
-    contractStatusEl.textContent = "-";
-    paymentMethodEl.textContent = "-";
-    paidUntilEl.textContent = "-";
-    seatLimitEl.textContent = "-";
-    knowledgeCountEl.textContent = "-";
-    searchLimitEl.textContent = "-";
+// ===== Pricing logic =====
+function normalizePricing(p) {
+  // 防御的に整形（想定キーが無いときでも落ちないようにする）
+  return {
+    seats: Array.isArray(p?.seats) ? p.seats : [],
+    knowledge: p?.knowledge || { base_included: 1, extra_monthly_fee: 0 },
+    search_limit: p?.search_limit || { per_user_per_day: 0, note: "" },
+    poc: p?.poc || null
+  };
+}
+
+function getBaseFeeFromPricing(seatLimit) {
+  if (!pricing) return null;
+  const seats = pricing.seats
+    .map(x => ({
+      seat_limit: Number(x.seat_limit),
+      monthly_fee: x.monthly_fee,
+      label: x.label
+    }))
+    .filter(x => Number.isFinite(x.seat_limit))
+    .sort((a, b) => a.seat_limit - b.seat_limit);
+
+  // seatLimitが一致する定義があればそれを優先
+  const exact = seats.find(s => s.seat_limit === Number(seatLimit));
+  if (exact) return exact.monthly_fee ?? null;
+
+  // 無ければ「seatLimit以下で最初に超える枠」を選ぶ（保険）
+  for (const s of seats) {
+    if (Number(seatLimit) <= s.seat_limit) return s.monthly_fee ?? null;
+  }
+  return null;
+}
+
+function computeDerived(contractLike) {
+  if (!pricing || !contractLike) {
+    return {
+      baseFee: null,
+      extraKnowledgeFee: null,
+      total: null,
+      searchLimitPerDay: null
+    };
+  }
+
+  const seatLimit = Number(contractLike.seat_limit || 0);
+  const knowledgeCount = Number(contractLike.knowledge_count || 1);
+
+  const baseFee = getBaseFeeFromPricing(seatLimit);
+
+  const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
+  const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
+  const extraCount = Math.max(0, knowledgeCount - baseIncluded);
+  const extraKnowledgeFee = extraCount * extraUnit;
+
+  const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
+  const searchLimitPerDay = seatLimit && perUser ? seatLimit * perUser : null;
+
+  const total = (baseFee === null) ? null : (Number(baseFee) + Number(extraKnowledgeFee || 0));
+  return { baseFee, extraKnowledgeFee, total, searchLimitPerDay };
+}
+
+function renderPricing() {
+  if (!pricing) {
+    pricingSeatsTbody.innerHTML = `<tr><td colspan="3" class="muted">pricing.json が未読込です</td></tr>`;
+    pricingKnowledge.textContent = "-";
+    pricingSearchLimit.textContent = "-";
+    pricingPoc.textContent = "-";
+    seatLimitSelect.innerHTML = "";
+    seatLimitSelect.disabled = true;
     return;
   }
 
-  contractBadge.textContent = `contract: ${contract.contract_id ?? "-"}`;
-  statusBadge.textContent = `status: ${contract.status ?? "-"}`;
+  // seats table
+  const rows = pricing.seats
+    .map(s => ({
+      seat_limit: s.seat_limit,
+      monthly_fee: s.monthly_fee,
+      label: s.label
+    }))
+    .sort((a, b) => Number(a.seat_limit) - Number(b.seat_limit));
 
-  contractIdEl.textContent = contract.contract_id ?? "-";
-  contractStatusEl.textContent = contract.status ?? "-";
-  paymentMethodEl.textContent = contract.payment_method_configured ? "設定済み" : "未設定";
-  paidUntilEl.textContent = contract.paid_until ?? "-";
-  seatLimitEl.textContent = contract.seat_limit ?? "-";
-  knowledgeCountEl.textContent = contract.knowledge_count ?? "-";
+  pricingSeatsTbody.innerHTML = rows.map(r => {
+    const lim = (r.label && r.monthly_fee == null)
+      ? r.label
+      : `${r.seat_limit}人まで`;
+    const fee = (r.monthly_fee == null) ? "-" : yen(Number(r.monthly_fee));
+    const note = (r.monthly_fee == null) ? "個別見積" : "";
+    return `<tr><td>${escapeHtml(lim)}</td><td>${escapeHtml(fee)}</td><td class="muted">${escapeHtml(note)}</td></tr>`;
+  }).join("");
 
-  // 参考：利用者数×100回/日（1ナレッジ想定）
-  const seat = Number(contract.seat_limit || 0);
-  const lim = seat ? (seat * 100) : 0;
-  searchLimitEl.textContent = lim ? `${lim} 回/日（参考）` : "-";
+  // knowledge
+  const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
+  const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
+  pricingKnowledge.textContent = `基本に含む: ${baseIncluded} / 追加: ${yen(extraUnit)} / 月`;
 
+  // search limit
+  const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
+  const note = pricing.search_limit?.note ? `（${pricing.search_limit.note}）` : "";
+  pricingSearchLimit.textContent = `利用者数 × ${perUser}回/日 ${note}`.trim();
+
+  // poc
+  if (pricing.poc) {
+    pricingPoc.textContent = `${pricing.poc.knowledge_types}種類 / ${pricing.poc.days}日 / ${yen(Number(pricing.poc.price))}`;
+  } else {
+    pricingPoc.textContent = "-";
+  }
+
+  // seat options
+  seatLimitSelect.innerHTML = "";
+  for (const r of rows) {
+    if (!Number.isFinite(Number(r.seat_limit))) continue;
+    // 要相談枠は選択できても良いが、ここは disabled でも良い
+    const isConsult = (r.monthly_fee == null);
+    const opt = document.createElement("option");
+    opt.value = String(r.seat_limit);
+    opt.textContent = isConsult
+      ? (r.label || `${r.seat_limit}人以上（要相談）`)
+      : `${r.seat_limit}人まで`;
+    opt.dataset.isConsult = isConsult ? "1" : "0";
+    seatLimitSelect.appendChild(opt);
+  }
+  seatLimitSelect.disabled = false;
+}
+
+async function loadPricing() {
+  // APIが GCS(ank-bucket/config/pricing.json) を読んで返す想定
+  const p = await apiFetch(`/pricing`, { method: "GET" });
+  pricing = normalizePricing(p);
+  renderPricing();
+}
+
+// ===== Contract =====
+function renderContract() {
+  // badges
+  contractBadge.textContent = `contract: ${contract?.contract_id ?? "-"}`;
+  statusBadge.textContent = `status: ${contract?.status ?? "-"}`;
+
+  // fields
+  contractIdEl.textContent = contract?.contract_id ?? "-";
+  contractStatusEl.textContent = contract?.status ?? "-";
+  paymentMethodEl.textContent = contract?.payment_method_configured ? "設定済み" : "未設定";
+  paidUntilEl.textContent = contract?.paid_until ?? "-";
+
+  // form defaults
+  if (contract?.seat_limit && seatLimitSelect.options.length) {
+    seatLimitSelect.value = String(contract.seat_limit);
+  }
+  if (contract?.knowledge_count != null) {
+    knowledgeCountInput.value = String(contract.knowledge_count);
+  }
+
+  // computed (pricingから算出)
+  const derived = computeDerived({
+    seat_limit: Number(seatLimitSelect.value || contract?.seat_limit || 0),
+    knowledge_count: Number(knowledgeCountInput.value || contract?.knowledge_count || 1)
+  });
+
+  kpiBase.textContent = (derived.baseFee == null) ? "-" : yen(Number(derived.baseFee));
+  kpiExtra.textContent = (derived.extraKnowledgeFee == null) ? "-" : yen(Number(derived.extraKnowledgeFee));
+  kpiMonthly.textContent = (derived.total == null) ? "-" : yen(Number(derived.total));
+  kpiSearchLimit.textContent = (derived.searchLimitPerDay == null) ? "-" : `${derived.searchLimitPerDay.toLocaleString("ja-JP")}回/日`;
+
+  // banner (statusだけで警告/停止の表示)
   hideBanner();
-  if (contract.status === "grace") {
+  if (contract?.status === "grace") {
     showBanner("warn", "支払い確認が取れていません（猶予期間）。検索画面に警告を表示します。");
   }
-  if (contract.status === "suspended" || contract.status === "cancelled") {
+  if (contract?.status === "suspended" || contract?.status === "cancelled") {
     showBanner("bad", "契約が停止しています。検索は停止（または強い警告）対象です。");
   }
+
+  // 保存ボタン（APIがあれば有効化）
+  // ここでは「pricing読めた」かつ「contractがある」ならONにする
+  saveContractBtn.disabled = !(pricing && contract);
 }
 
 async function loadContract() {
-  // contract_id は “契約したときの uid” 前提：uidをキーにしてサーバで解決
   contract = await apiFetch(`/contract`, { method: "GET" });
   renderContract();
 }
 
 async function initContract() {
-  // 初回用：存在すればエラーでOK（UI的には警告だけ出す）
-  // body で seat_limit 等の初期値を渡せるようにしておく
+  // 初期値：pricingから最小枠を選ぶ
+  let defaultSeat = 10;
+  if (pricing?.seats?.length) {
+    const sorted = pricing.seats
+      .map(s => Number(s.seat_limit))
+      .filter(n => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (sorted.length) defaultSeat = sorted[0];
+  }
+
   const payload = {
-    seat_limit: 10,
+    seat_limit: defaultSeat,
     knowledge_count: 1,
     status: "active",
     payment_method_configured: false
   };
+
   await apiFetch(`/contract/init`, { method: "POST", body: payload });
   await loadContract();
 }
 
-// ====== users ======
+// 契約フォーム変更時にKPI更新
+seatLimitSelect.addEventListener("change", () => renderContract());
+knowledgeCountInput.addEventListener("input", () => renderContract());
+
+// 保存はAPI未確定なので、ボタンは残すが処理は警告にしておく
+saveContractBtn.addEventListener("click", async () => {
+  alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");
+});
+
+// ===== Users =====
 function computeMyRole() {
   myRole = "member";
   if (!currentUser) return;
   const myEmail = (currentUser.email || "").toLowerCase();
   const me = users.find(u => (u.email || "").toLowerCase() === myEmail);
   if (me && me.role) myRole = me.role;
+
   roleBadge.textContent = `role: ${myRole}`;
   userOps.hidden = (myRole !== "admin");
 }
 
 function countActiveAdmins() {
   return users.filter(u => u.status !== "disabled" && u.role === "admin").length;
-}
-
-function fmtLastLogin(v) {
-  if (!v) return "-";
-  // v は ISO を想定
-  try {
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return String(v);
-    return d.toLocaleString();
-  } catch {
-    return String(v);
-  }
 }
 
 function renderUsers() {
@@ -232,7 +406,6 @@ function renderUsers() {
       roleBtn.textContent = (role === "admin") ? "memberにする" : "adminにする";
       roleBtn.style.marginRight = "6px";
 
-      // ガード：最後のadminをmemberに変更不可
       const isLastAdmin = (role === "admin" && status !== "disabled" && activeAdminCount <= 1);
       roleBtn.disabled = isLastAdmin;
 
@@ -246,8 +419,6 @@ function renderUsers() {
       const disableBtn = document.createElement("button");
       disableBtn.className = (status === "disabled") ? "" : "danger";
       disableBtn.textContent = (status === "disabled") ? "有効化" : "無効化";
-
-      // ガード：最後のadminを無効化不可
       disableBtn.disabled = (role === "admin" && status !== "disabled" && activeAdminCount <= 1);
 
       disableBtn.addEventListener("click", async () => {
@@ -266,15 +437,6 @@ function renderUsers() {
   }
 }
 
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 async function loadUsers() {
   users = await apiFetch(`/users`, { method: "GET" });
   renderUsers();
@@ -284,37 +446,37 @@ async function loadUsers() {
 async function addUser(email, role) {
   await apiFetch(`/users`, {
     method: "POST",
-    body: { email, role } // uidは初回ログインで紐づける想定でもOK
+    body: { email, role }
   });
 }
 
 async function updateUser(email, patch) {
-  // emailキーで更新（PoCではこれが一番簡単）
   await apiFetch(`/users/update`, {
     method: "POST",
     body: { email, patch }
   });
 }
 
-// ====== events ======
+// ===== Events =====
 logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
   location.href = "./login.html";
 });
 
-refreshContractBtn.addEventListener("click", async () => {
+refreshAllBtn.addEventListener("click", async () => {
   try {
+    await loadPricing();
+    await loadUsers();
     await loadContract();
   } catch (e) {
     console.error(e);
-    showBanner("bad", `契約情報の取得に失敗: ${e.message}`);
+    showBanner("bad", `更新に失敗: ${e.message}`);
   }
 });
 
 initContractBtn.addEventListener("click", async () => {
   try {
     await initContract();
-    showBanner("warn", "契約を初期化しました（すでに存在する場合は失敗する想定です）。");
   } catch (e) {
     console.error(e);
     showBanner("warn", `契約初期化: ${e.message}`);
@@ -322,13 +484,11 @@ initContractBtn.addEventListener("click", async () => {
 });
 
 openBillingBtn.addEventListener("click", async () => {
-  // 決済ページURLは contract から返すのが理想。ここは仮。
-  // 例：contract.billing_url があればそれへ遷移。
   if (contract?.billing_url) {
     location.href = contract.billing_url;
     return;
   }
-  alert("billing_url が未設定です（API側で返すようにしてください）。");
+  alert("billing_url が未設定です（APIが返すようにしてください）。");
 });
 
 refreshUsersBtn.addEventListener("click", async () => {
@@ -344,14 +504,8 @@ addUserBtn.addEventListener("click", async () => {
   const email = (newUserEmail.value || "").trim().toLowerCase();
   const role = newUserRole.value;
 
-  if (!email) {
-    alert("メールアドレスを入力してください。");
-    return;
-  }
-  if (!email.includes("@")) {
-    alert("メールアドレスの形式が正しくありません。");
-    return;
-  }
+  if (!email) return alert("メールアドレスを入力してください。");
+  if (!email.includes("@")) return alert("メールアドレスの形式が正しくありません。");
 
   addUserBtn.disabled = true;
   try {
@@ -366,24 +520,21 @@ addUserBtn.addEventListener("click", async () => {
   }
 });
 
-// ====== boot ======
+// ===== Boot =====
 onAuthStateChanged(auth, async (u) => {
   if (!u) {
-    // 未ログイン → loginへ
     location.href = "./login.html";
     return;
   }
   currentUser = u;
   userEmailEl.textContent = u.email || "-";
 
-  // 初期表示
   setActiveTab("contract");
 
   try {
-    // 先に users を読み、myRole を確定
+    // pricing → users → contract の順（UIが自然）
+    await loadPricing();
     await loadUsers();
-
-    // admin でない場合でも契約は表示する（閲覧のみ）
     await loadContract();
   } catch (e) {
     console.error(e);

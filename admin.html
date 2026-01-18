@@ -10,14 +10,14 @@
     .left { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
     .right { display:flex; gap:8px; align-items:center; }
     .badge { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; }
-    .container { padding: 16px; max-width: 980px; margin: 0 auto; }
+    .container { padding: 16px; max-width: 1040px; margin: 0 auto; }
     .tabs { display:flex; gap:8px; border-bottom:1px solid #eee; margin-bottom: 12px; }
     .tabbtn { padding: 10px 12px; border: none; background: transparent; cursor: pointer; border-bottom: 2px solid transparent; }
     .tabbtn[aria-selected="true"] { border-bottom-color: #333; font-weight: 600; }
     .panel { padding: 8px 0; }
     .card { border: 1px solid #eee; border-radius: 12px; padding: 12px; margin: 12px 0; }
     .row { display:flex; gap:12px; flex-wrap:wrap; }
-    .col { flex: 1 1 280px; }
+    .col { flex: 1 1 320px; }
     label { display:block; font-size: 12px; color:#555; margin-bottom: 6px; }
     input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 10px; }
     button { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; background: #fff; cursor: pointer; }
@@ -32,142 +32,203 @@
     .banner.warn { border-color: #f0c36d; }
     .banner.bad { border-color: #e28b8b; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .kpi { display:flex; gap:14px; flex-wrap:wrap; margin-top: 10px; }
+    .kpi > div { border:1px solid #eee; border-radius:12px; padding:10px 12px; min-width: 200px; }
+    .kpi .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
   </style>
 </head>
+
 <body>
-  <header>
-    <div class="left">
-      <strong>Admin</strong>
-      <span id="contractBadge" class="badge">contract: -</span>
-      <span id="statusBadge" class="badge">status: -</span>
-      <span id="roleBadge" class="badge">role: -</span>
-    </div>
-    <div class="right">
-      <span id="userEmail" class="muted">-</span>
-      <button id="logoutBtn">ログアウト</button>
-    </div>
-  </header>
-
-  <div class="container">
-    <div id="banner" class="banner" hidden></div>
-
-    <nav class="tabs" role="tablist" aria-label="Admin tabs">
-      <button class="tabbtn" role="tab" id="tab-contract" aria-controls="panel-contract" aria-selected="true">契約</button>
-      <button class="tabbtn" role="tab" id="tab-users" aria-controls="panel-users" aria-selected="false">ユーザー</button>
-    </nav>
-
-    <section id="panel-contract" class="panel" role="tabpanel" aria-labelledby="tab-contract">
-      <div class="card">
-        <div class="row">
-          <div class="col">
-            <div><strong>契約情報</strong></div>
-            <div class="muted">支払い状態を基準に、検索画面の警告/停止を制御します。</div>
-          </div>
-          <div class="col" style="text-align:right;">
-            <button id="refreshContractBtn">更新</button>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:12px;">
-          <div class="col">
-            <div class="muted">契約ID</div>
-            <div id="contractId" class="mono">-</div>
-          </div>
-          <div class="col">
-            <div class="muted">ステータス</div>
-            <div id="contractStatus">-</div>
-          </div>
-          <div class="col">
-            <div class="muted">支払い方法</div>
-            <div id="paymentMethod">-</div>
-          </div>
-          <div class="col">
-            <div class="muted">有効期限</div>
-            <div id="paidUntil">-</div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:12px;">
-          <div class="col">
-            <div class="muted">人数枠</div>
-            <div id="seatLimit">-</div>
-          </div>
-          <div class="col">
-            <div class="muted">ナレッジ数</div>
-            <div id="knowledgeCount">-</div>
-          </div>
-          <div class="col">
-            <div class="muted">検索上限（参考）</div>
-            <div id="searchLimit">-</div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:12px;">
-          <div class="col">
-            <button id="initContractBtn" class="primary">契約を初期化（初回）</button>
-            <div class="muted">※ 初回のみ。存在する場合は失敗してOK。</div>
-          </div>
-          <div class="col">
-            <button id="openBillingBtn">支払い設定ページへ</button>
-            <div class="muted">※ 実体は外部決済ページURLに遷移。</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="panel-users" class="panel" role="tabpanel" aria-labelledby="tab-users" hidden>
-      <div class="card">
-        <div class="row">
-          <div class="col">
-            <div><strong>ユーザー管理</strong></div>
-            <div class="muted">admin のみ追加/権限変更/無効化ができます。</div>
-          </div>
-          <div class="col" style="text-align:right;">
-            <button id="refreshUsersBtn">更新</button>
-          </div>
-        </div>
-
-        <div id="userOps" class="row" style="margin-top:12px;" hidden>
-          <div class="col">
-            <label>メールアドレス</label>
-            <input id="newUserEmail" type="email" placeholder="user@example.com" />
-          </div>
-          <div class="col">
-            <label>権限</label>
-            <select id="newUserRole">
-              <option value="member">member</option>
-              <option value="admin">admin</option>
-            </select>
-          </div>
-          <div class="col" style="align-self:end;">
-            <button id="addUserBtn" class="primary">ユーザー追加</button>
-          </div>
-        </div>
-
-        <div style="margin-top:12px; overflow:auto;">
-          <table>
-            <thead>
-              <tr>
-                <th>メール</th>
-                <th>role</th>
-                <th>status</th>
-                <th>最終ログイン</th>
-                <th style="width: 240px;">操作</th>
-              </tr>
-            </thead>
-            <tbody id="usersTbody">
-              <tr><td colspan="5" class="muted">読み込み中...</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="muted" style="margin-top:10px;">
-          ガード：最後の admin を member に変更／無効化はできません（管理が詰まるのを防ぐため）。
-        </div>
-      </div>
-    </section>
+<header>
+  <div class="left">
+    <strong>Admin</strong>
+    <span id="contractBadge" class="badge">contract: -</span>
+    <span id="statusBadge" class="badge">status: -</span>
+    <span id="roleBadge" class="badge">role: -</span>
   </div>
+  <div class="right">
+    <span id="userEmail" class="muted">-</span>
+    <button id="logoutBtn">ログアウト</button>
+  </div>
+</header>
 
-  <script type="module" src="./admin.js"></script>
+<div class="container">
+  <div id="banner" class="banner" hidden></div>
+
+  <nav class="tabs" role="tablist" aria-label="Admin tabs">
+    <button class="tabbtn" role="tab" id="tab-contract" aria-controls="panel-contract" aria-selected="true">契約</button>
+    <button class="tabbtn" role="tab" id="tab-users" aria-controls="panel-users" aria-selected="false">ユーザー</button>
+  </nav>
+
+  <!-- 契約 -->
+  <section id="panel-contract" class="panel" role="tabpanel" aria-labelledby="tab-contract">
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <div><strong>契約情報</strong></div>
+          <div class="muted">pricing.json（GCS）を読み取り、人数枠・追加ナレッジ料金・検索上限を表示します。</div>
+        </div>
+        <div class="col" style="text-align:right;">
+          <button id="refreshAllBtn">更新</button>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div class="col">
+          <div class="muted">契約ID</div>
+          <div id="contractId" class="mono">-</div>
+        </div>
+        <div class="col">
+          <div class="muted">ステータス</div>
+          <div id="contractStatus">-</div>
+        </div>
+        <div class="col">
+          <div class="muted">支払い方法</div>
+          <div id="paymentMethod">-</div>
+        </div>
+        <div class="col">
+          <div class="muted">有効期限</div>
+          <div id="paidUntil">-</div>
+        </div>
+      </div>
+
+      <div class="kpi">
+        <div>
+          <div class="muted">月額（概算）</div>
+          <div id="kpiMonthly" class="v">-</div>
+        </div>
+        <div>
+          <div class="muted">基本料金</div>
+          <div id="kpiBase" class="v">-</div>
+        </div>
+        <div>
+          <div class="muted">追加ナレッジ料金</div>
+          <div id="kpiExtra" class="v">-</div>
+        </div>
+        <div>
+          <div class="muted">検索上限（参考）</div>
+          <div id="kpiSearchLimit" class="v">-</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="col">
+          <label>人数枠（seat_limit）</label>
+          <select id="seatLimitSelect" disabled></select>
+          <div class="muted">※ 選択肢は pricing.json から読み取ります</div>
+        </div>
+        <div class="col">
+          <label>ナレッジ数（knowledge_count）</label>
+          <input id="knowledgeCountInput" type="number" min="1" step="1" value="1" />
+          <div class="muted">※ 1ナレッジを含み、追加分は月額課金（pricing.json）</div>
+        </div>
+        <div class="col" style="align-self:end;">
+          <button id="saveContractBtn" class="primary" disabled>契約内容を保存</button>
+          <div class="muted">※ 実装はAPI側（POST /contract/update など）で受ける</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="col">
+          <button id="initContractBtn" class="primary">契約を初期化（初回）</button>
+          <div class="muted">※ 契約が無い場合に作成します</div>
+        </div>
+        <div class="col">
+          <button id="openBillingBtn">支払い設定ページへ</button>
+          <div class="muted">※ APIが billing_url を返す場合、そこへ遷移します</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div><strong>料金表（pricing.json）</strong></div>
+      <div class="muted">GCSに置いた pricing.json の内容を表示します。</div>
+      <div style="margin-top:10px; overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>人数枠</th>
+              <th>月額</th>
+              <th>備考</th>
+            </tr>
+          </thead>
+          <tbody id="pricingSeatsTbody">
+            <tr><td colspan="3" class="muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="muted">ナレッジ追加（月額）</div>
+        <div id="pricingKnowledge" class="mono">-</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="muted">検索回数上限（参考）</div>
+        <div id="pricingSearchLimit" class="mono">-</div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <div class="muted">PoC</div>
+        <div id="pricingPoc" class="mono">-</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ユーザー -->
+  <section id="panel-users" class="panel" role="tabpanel" aria-labelledby="tab-users" hidden>
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <div><strong>ユーザー管理</strong></div>
+          <div class="muted">admin のみ追加/権限変更/無効化ができます。</div>
+        </div>
+        <div class="col" style="text-align:right;">
+          <button id="refreshUsersBtn">更新</button>
+        </div>
+      </div>
+
+      <div id="userOps" class="row" style="margin-top:12px;" hidden>
+        <div class="col">
+          <label>メールアドレス</label>
+          <input id="newUserEmail" type="email" placeholder="user@example.com" />
+        </div>
+        <div class="col">
+          <label>権限</label>
+          <select id="newUserRole">
+            <option value="member">member</option>
+            <option value="admin">admin</option>
+          </select>
+        </div>
+        <div class="col" style="align-self:end;">
+          <button id="addUserBtn" class="primary">ユーザー追加</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px; overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>メール</th>
+              <th>role</th>
+              <th>status</th>
+              <th>最終ログイン</th>
+              <th style="width: 240px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="usersTbody">
+            <tr><td colspan="5" class="muted">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        ガード：最後の admin を member に変更／無効化はできません。
+      </div>
+    </div>
+  </section>
+</div>
+
+<script type="module" src="./admin.js"></script>
 </body>
 </html>
