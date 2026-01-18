@@ -1,14 +1,14 @@
 // admin.js
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: "AIza....",
-  authDomain: "....firebaseapp.com",
-  projectId: "....",
-  storageBucket: "....firebasestorage.app",
-  messagingSenderId: "....",
-  appId: "...."
+  apiKey: "AIzaSyBpHlwulq6lnbmBzNm0rEYNahWk7liD3BM",
+  authDomain: "ank-project-77283.firebaseapp.com",
+  projectId: "ank-project-77283",
+  storageBucket: "ank-project-77283.firebasestorage.app",
+  messagingSenderId: "707356972093",
+  appId: "1:707356972093:web:03d20f1c1e5948150f8654"
 };
 
 const app = initializeApp(firebaseConfig);
