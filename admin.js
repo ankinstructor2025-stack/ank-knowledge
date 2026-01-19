@@ -52,7 +52,7 @@ const knowledgeCountSelect = $("knowledgeCountSelect");
 
 const saveContractBtn = $("saveContractBtn");   // ★このボタンを「新規/更新」共通にする
 const initContractBtn = $("initContractBtn");   // ★誤解を生むので隠す
-const openBillingBtn = $("openBillingBtn");
+const openBillingBtn = $("openBillingBtn");     // ★無くても動くようにする（今回修正）
 
 const kpiMonthly = $("kpiMonthly");
 const kpiBase = $("kpiBase");
@@ -134,6 +134,24 @@ function setTenantId(tid) {
 }
 function clearTenantId() {
   localStorage.removeItem(TENANT_KEY);
+}
+
+// ===== Billing redirect（今回追加）=====
+function tryRedirectToBilling(reason = "") {
+  const url = contract?.billing_url;
+  if (!url) return false;
+
+  // openBillingBtn がある場合は「自動遷移しない」運用にもできるが、
+  // いまは “導線が失われない” を優先して、ボタンが無い場合に自動遷移する。
+  if (!openBillingBtn) {
+    console.log(`[billing] redirect (${reason}) -> ${url}`);
+    location.href = url;
+    return true;
+  }
+
+  // ボタンがある場合はボタン経由で遷移（従来通り）
+  // ただし、UX上必要ならここを自動遷移に変えてもOK。
+  return false;
 }
 
 // ===== API =====
@@ -339,17 +357,14 @@ async function loadPricing() {
 
 // ===== Contract =====
 function setPrimaryContractButton() {
-  // ★同じボタンで文言を切り替える
   const hasTenant = !!getTenantId();
   if (!hasTenant) {
     saveContractBtn.textContent = "新規契約を開始する";
-    saveContractBtn.disabled = !pricing; // pricingが読めていれば開始できる
+    saveContractBtn.disabled = !pricing;
     return;
   }
-
-  // 契約済み：更新ボタンにする（update APIができたらここで呼ぶ）
   saveContractBtn.textContent = "契約内容を更新する";
-  saveContractBtn.disabled = !(pricing && contract); // 今はcontractが取れている前提
+  saveContractBtn.disabled = !(pricing && contract);
 }
 
 function renderContract() {
@@ -380,7 +395,16 @@ function renderContract() {
     showBanner("bad", "契約が停止しています。検索は停止（または強い警告）対象です。");
   }
 
-  openBillingBtn.disabled = !contract?.billing_url;
+  // openBillingBtn は “存在する場合のみ” 制御
+  if (openBillingBtn) {
+    openBillingBtn.disabled = !contract?.billing_url;
+    // billing_url があるなら表示（HTML側で消してない場合だけ）
+    openBillingBtn.style.display = contract?.billing_url ? "" : "none";
+  } else {
+    // ボタンが無い場合は、billing_urlが返ってきた瞬間に自動遷移
+    tryRedirectToBilling("renderContract");
+  }
+
   setPrimaryContractButton();
 }
 
@@ -395,13 +419,15 @@ function renderNoContract() {
   paymentMethodEl.textContent = "-";
   paidUntilEl.textContent = "-";
 
-  openBillingBtn.disabled = true;
+  if (openBillingBtn) {
+    openBillingBtn.disabled = true;
+    openBillingBtn.style.display = "none";
+  }
 
   hideBanner();
   renderEstimateFromUI();
   setPrimaryContractButton();
 
-  // 未契約はユーザー管理を無効化
   users = [];
   renderUsers();
   roleBadge.textContent = `role: -`;
@@ -409,7 +435,6 @@ function renderNoContract() {
 }
 
 async function loadContractOrNull() {
-  // tenant_id が無ければ呼ばない（ここが重要）
   if (!getTenantId()) {
     renderNoContract();
     return null;
@@ -419,7 +444,6 @@ async function loadContractOrNull() {
   contract = resp?.contract ?? null;
 
   if (!contract) {
-    // tenantはあるが contract.json 無い等
     renderNoContract();
     return null;
   }
@@ -429,7 +453,6 @@ async function loadContractOrNull() {
 }
 
 async function contractInitFromUI() {
-  // 現在の選択値を使って契約開始
   const seat_limit = Number(seatLimitSelect?.value || 10);
   const knowledge_count = Number(knowledgeCountSelect?.value || 1);
 
@@ -449,7 +472,8 @@ async function contractInitFromUI() {
   const tenantId = resp?.tenant_id;
   if (tenantId) setTenantId(tenantId);
 
-  // 契約取得＆ユーザー取得
+  // サーバが billing_url を返す場合があるので、契約取得前に契約オブジェクトを暫定反映してもよい
+  // ただし、最終的にはGET /contractで確定させる
   await loadContractOrNull();
   await loadUsers();
 }
@@ -462,12 +486,9 @@ knowledgeCountSelect.addEventListener("change", () => renderEstimateFromUI());
 saveContractBtn.addEventListener("click", async () => {
   try {
     if (!getTenantId()) {
-      // 未契約 → 新規開始
       await contractInitFromUI();
       return;
     }
-
-    // 契約済み → update（API未実装なので一旦メッセージ）
     alert("契約内容の更新API（POST /contract/update）が未実装です。先にAPI側を実装したらここで呼びます。");
   } catch (e) {
     console.error(e);
@@ -559,7 +580,6 @@ function renderUsers() {
 }
 
 async function loadUsers() {
-  // tenant_id が無ければ呼ばない
   if (!getTenantId()) {
     users = [];
     renderUsers();
@@ -575,12 +595,10 @@ async function loadUsers() {
 }
 
 async function addUser(email, role) {
-  // （必要ならAPI追加して実装）
   await apiFetchWithTenant(`/users`, { method: "POST", body: { email, role } });
 }
 
 async function updateUser(email, patch) {
-  // 今の admin-api 実装は POST /users/update で users配列を丸ごと保存する方式
   const body = {
     tenant_id: getTenantId(),
     users: users.map(u => {
@@ -608,13 +626,16 @@ refreshAllBtn.addEventListener("click", async () => {
   }
 });
 
-openBillingBtn.addEventListener("click", async () => {
-  if (contract?.billing_url) {
-    location.href = contract.billing_url;
-    return;
-  }
-  alert("billing_url が未設定です（APIが返すようにしてください）。");
-});
+// openBillingBtn は “存在する場合のみ” バインド
+if (openBillingBtn) {
+  openBillingBtn.addEventListener("click", async () => {
+    if (contract?.billing_url) {
+      location.href = contract.billing_url;
+      return;
+    }
+    alert("billing_url が未設定です（APIが返すようにしてください）。");
+  });
+}
 
 refreshUsersBtn.addEventListener("click", async () => {
   try {
@@ -659,16 +680,13 @@ onAuthStateChanged(auth, async (u) => {
   setActiveTab("contract");
 
   try {
-    // pricing は常に読める（tenant_id不要）
     await loadPricing();
 
-    // tenant_id が無ければ未契約表示で止める
     if (!getTenantId()) {
       renderNoContract();
       return;
     }
 
-    // 契約済みのみ読む
     await loadContractOrNull();
     await loadUsers();
   } catch (e) {
