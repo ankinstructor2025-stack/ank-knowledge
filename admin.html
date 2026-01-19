@@ -124,8 +124,21 @@
         </div>
         <div class="col" style="align-self:end;">
           <button id="saveContractBtn" class="primary" disabled>契約内容を保存</button>
+          <div class="muted">※ 実装はAPI側（POST /contract/update など）で受ける</div>
         </div>
       </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="col">
+          <button id="initContractBtn" class="primary">契約を初期化（初回）</button>
+          <div class="muted">※ 契約が無い場合に作成します</div>
+        </div>
+        <div class="col">
+          <button id="openBillingBtn">支払い設定ページへ</button>
+          <div class="muted">※ APIが billing_url を返す場合、そこへ遷移します</div>
+        </div>
+      </div>
+    </div>
 
     <section class="card">
       <h3>契約とナレッジ構成の考え方</h3>
