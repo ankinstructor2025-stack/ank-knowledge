@@ -15,9 +15,15 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 /**
- * ★ Cloud Run のURL（末尾スラッシュなし）
+ * ★ ank-admin-api のURL（末尾スラッシュなし）
  */
 const API_BASE = "https://ank-admin-api-986862757498.asia-northeast1.run.app";
+
+/**
+ * tenant_id の保存キー
+ * - 契約初期化で発行された tenant_id を保存する
+ */
+const TENANT_KEY = "ank_tenant_id";
 
 // ===== DOM =====
 const $ = (id) => document.getElementById(id);
@@ -72,8 +78,8 @@ const usersTbody = $("usersTbody");
 // ===== State =====
 let currentUser = null;
 let pricing = null;   // pricing.json（整形済み）
-let contract = null;  // contract json（未契約なら null）
-let users = [];
+let contract = null;  // contract object（未契約なら null）
+let users = [];       // users array
 let myRole = "member";
 
 // ===== Helpers =====
@@ -125,6 +131,19 @@ function fmtLastLogin(v) {
   }
 }
 
+function getTenantId() {
+  return localStorage.getItem(TENANT_KEY) || "";
+}
+
+function setTenantId(tid) {
+  if (!tid) return;
+  localStorage.setItem(TENANT_KEY, tid);
+}
+
+function clearTenantId() {
+  localStorage.removeItem(TENANT_KEY);
+}
+
 function isNotFoundError(e) {
   // apiFetch は "API error 404: ..." の形式
   return String(e?.message || "").includes("API error 404");
@@ -156,14 +175,26 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
   return null;
 }
 
+/**
+ * tenant_id を必須にするAPI呼び出し用
+ */
+async function apiFetchWithTenant(path, opts = {}) {
+  const tenantId = getTenantId();
+  if (!tenantId) {
+    // 契約前に呼ばれた＝UIのバグ扱いなので、ここで止める
+    throw new Error("tenant_id is missing (not contracted yet)");
+  }
+
+  // 既にクエリがある場合も考慮して付与
+  const sep = path.includes("?") ? "&" : "?";
+  const withTid = `${path}${sep}tenant_id=${encodeURIComponent(tenantId)}`;
+  return apiFetch(withTid, opts);
+}
+
 // ===== Pricing logic =====
 function normalizePricing(p) {
   const seats = Array.isArray(p?.seats) ? p.seats : [];
-
-  // knowledge_count: [{value,label,monthly_price}] を優先
   const knowledge_count = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
-
-  // 旧形式のフォールバック（残っていてもOK）
   const legacyKnowledge = p?.knowledge || { base_included: 1, extra_monthly_fee: 0 };
 
   return {
@@ -197,7 +228,6 @@ function getBaseFeeFromPricing(seatLimit) {
 }
 
 function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
-  // 新形式 knowledge_count を最優先
   if (pricing?.knowledge_count?.length) {
     const krows = pricing.knowledge_count
       .map(x => ({
@@ -211,11 +241,9 @@ function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
     const hit = krows.find(x => x.value === Number(knowledgeCount));
     if (hit) return Number.isFinite(hit.monthly_price) ? hit.monthly_price : 0;
 
-    // 定義外は危険なので null（丸めない）
     return null;
   }
 
-  // フォールバック（旧形式）
   const baseIncluded = Number(pricing?.knowledge?.base_included ?? 1);
   const extraUnit = Number(pricing?.knowledge?.extra_monthly_fee ?? 0);
   const extraCount = Math.max(0, Number(knowledgeCount) - baseIncluded);
@@ -245,7 +273,6 @@ function computeDerived({ seat_limit, knowledge_count }) {
 }
 
 function renderEstimateFromUI() {
-  // 契約が無くても、選択値で見積もりを出す
   const seatLimit = Number(seatLimitSelect?.value || 0);
   const knowledgeCount = Number(knowledgeCountSelect?.value || 1);
 
@@ -329,12 +356,10 @@ function renderPricing() {
     }
     knowledgeCountSelect.disabled = false;
 
-    // 未契約時の初期値（先頭＝最小）を自然にする
     if (knowledgeCountSelect.options.length) {
       knowledgeCountSelect.value = knowledgeCountSelect.options[0].value;
     }
   } else {
-    // フォールバック表示（旧形式のみのとき）
     const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
     const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
     pricingKnowledge.textContent = `基本に含む: ${baseIncluded} / 追加: ${yen(extraUnit)} / 月`;
@@ -364,8 +389,6 @@ async function loadPricing() {
   const p = await apiFetch(`/pricing`, { method: "GET" });
   pricing = normalizePricing(p);
   renderPricing();
-
-  // pricing が揃ったら、未契約でも初期見積もりを出す（select初期値で）
   renderEstimateFromUI();
 }
 
@@ -379,7 +402,6 @@ function renderContract() {
   paymentMethodEl.textContent = contract?.payment_method_configured ? "設定済み" : "未設定";
   paidUntilEl.textContent = contract?.paid_until ?? "-";
 
-  // 契約値があれば select に反映
   if (contract?.seat_limit && seatLimitSelect.options.length) {
     seatLimitSelect.value = String(contract.seat_limit);
   }
@@ -389,7 +411,6 @@ function renderContract() {
     knowledgeCountSelect.value = has ? v : knowledgeCountSelect.options[0].value;
   }
 
-  // KPI は select の値で再計算
   renderEstimateFromUI();
 
   hideBanner();
@@ -412,17 +433,39 @@ function renderNoContract() {
   paymentMethodEl.textContent = "-";
   paidUntilEl.textContent = "-";
 
-  hideBanner();
-  saveContractBtn.disabled = true;
+  // 未契約のときはユーザー操作を閉じる
+  users = [];
+  renderUsers();
+  roleBadge.textContent = `role: -`;
+  userOps.hidden = true;
 
-  // 未契約でも見積もりは出す
+  saveContractBtn.disabled = true;
+  openBillingBtn.disabled = true;
+
+  hideBanner();
   renderEstimateFromUI();
 }
 
 async function loadContractOrNull() {
+  // tenant_id が無ければ API を呼ばずに未契約扱い
+  if (!getTenantId()) {
+    contract = null;
+    renderNoContract();
+    return null;
+  }
+
   try {
-    contract = await apiFetch(`/contract`, { method: "GET" });
+    const resp = await apiFetchWithTenant(`/contract`, { method: "GET" });
+    // admin-api の返り：{ tenant_id, status, contract }
+    contract = resp?.contract ?? null;
+
+    if (!contract) {
+      renderNoContract();
+      return null;
+    }
+
     renderContract();
+    openBillingBtn.disabled = !contract?.billing_url;
     return contract;
   } catch (e) {
     if (isNotFoundError(e)) {
@@ -461,8 +504,15 @@ async function initContract() {
     payment_method_configured: false
   };
 
-  await apiFetch(`/contract/init`, { method: "POST", body: payload });
+  const resp = await apiFetch(`/contract/init`, { method: "POST", body: payload });
+
+  // admin-api の返り：{ tenant_id, status, contract }
+  const tenantId = resp?.tenant_id;
+  if (tenantId) setTenantId(tenantId);
+
+  // 以後、tenant_id 前提で読める
   await loadContractOrNull();
+  await loadUsers();
 }
 
 // select 変更で即見積もり
@@ -557,23 +607,38 @@ function renderUsers() {
 }
 
 async function loadUsers() {
-  users = await apiFetch(`/users`, { method: "GET" });
+  // tenant_id が無ければ API を呼ばず、空のまま
+  if (!getTenantId()) {
+    users = [];
+    renderUsers();
+    roleBadge.textContent = `role: -`;
+    userOps.hidden = true;
+    return;
+  }
+
+  const resp = await apiFetchWithTenant(`/users`, { method: "GET" });
+  // admin-api の返り：{ tenant_id, status, users }
+  users = Array.isArray(resp?.users) ? resp.users : [];
   renderUsers();
   computeMyRole();
 }
 
 async function addUser(email, role) {
-  await apiFetch(`/users`, {
-    method: "POST",
-    body: { email, role }
-  });
+  // 今回の admin-api 側には POST /users は作っていないので、無効にしておく
+  // 必要なら API 側に /users/add を実装してから有効化する
+  throw new Error("addUser API is not implemented yet");
 }
 
 async function updateUser(email, patch) {
-  await apiFetch(`/users/update`, {
-    method: "POST",
-    body: { email, patch }
-  });
+  // admin-api 側は POST /users/update を受ける（tenant_id も必要）
+  const body = {
+    tenant_id: getTenantId(),
+    users: users.map(u => {
+      if ((u.email || "").toLowerCase() !== (email || "").toLowerCase()) return u;
+      return { ...u, ...patch };
+    })
+  };
+  await apiFetch(`/users/update`, { method: "POST", body });
 }
 
 // ===== Events =====
@@ -585,8 +650,8 @@ logoutBtn.addEventListener("click", async () => {
 refreshAllBtn.addEventListener("click", async () => {
   try {
     await loadPricing();
-    await loadUsers();
     await loadContractOrNull();
+    await loadUsers();
   } catch (e) {
     console.error(e);
     showBanner("bad", `更新に失敗: ${e.message}`);
@@ -646,7 +711,6 @@ onAuthStateChanged(auth, async (u) => {
     return;
   }
 
-  // body を display:none にしている場合でも、ログイン後に必ず表示
   document.body.style.display = "block";
 
   currentUser = u;
@@ -655,10 +719,20 @@ onAuthStateChanged(auth, async (u) => {
   setActiveTab("contract");
 
   try {
-    // pricing → users → contract の順
+    // 1) pricing は tenant_id 無しでも必ず読む
     await loadPricing();
-    await loadUsers();
+
+    // 2) tenant_id が無ければ「未契約」表示にして終了
+    if (!getTenantId()) {
+      contract = null;
+      users = [];
+      renderNoContract();
+      return;
+    }
+
+    // 3) tenant_id がある場合のみ契約/ユーザーを読む
     await loadContractOrNull();
+    await loadUsers();
   } catch (e) {
     console.error(e);
     showBanner("bad", `初期化に失敗: ${e.message}`);
