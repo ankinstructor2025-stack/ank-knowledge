@@ -267,9 +267,9 @@ function renderPricing() {
     pricingSearchLimit.textContent = "-";
     pricingPoc.textContent = "-";
     seatLimitSelect.innerHTML = "";
-    seatLimitSelect.disabled = true;
+    seatLimitSelect.disabled = false;
     knowledgeCountSelect.innerHTML = "";
-    knowledgeCountSelect.disabled = true;
+    knowledgeCountSelect.disabled = false;
     return;
   }
 
