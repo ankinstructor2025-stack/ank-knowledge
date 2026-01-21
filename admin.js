@@ -667,13 +667,4 @@ onAuthStateChanged(auth, async (u) => {
 
   setActiveTab("contract");
 
-  try {
-    // pricing → users → contract の順
-    await loadPricing();
-    await loadUsers();
-    await loadContractOrNull();
-  } catch (e) {
-    console.error(e);
-    showBanner("bad", `初期化に失敗: ${e.message}`);
-  }
 });
