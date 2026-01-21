@@ -41,8 +41,6 @@ const contractStatusEl = $("contractStatus");
 const paymentMethodEl = $("paymentMethod");
 const paidUntilEl = $("paidUntil");
 
-const refreshAllBtn = $("refreshAllBtn");
-
 const seatLimitSelect = $("seatLimitSelect");
 const knowledgeCountSelect = $("knowledgeCountSelect");
 const saveContractBtn = $("saveContractBtn"); // ※APIがあれば有効化できる
@@ -60,7 +58,6 @@ const pricingSearchLimit = $("pricingSearchLimit");
 const pricingPoc = $("pricingPoc");
 
 // users
-const refreshUsersBtn = $("refreshUsersBtn");
 const userOps = $("userOps");
 const newUserEmail = $("newUserEmail");
 const newUserRole = $("newUserRole");
@@ -596,26 +593,6 @@ async function updateUser(email, patch) {
 logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
   location.href = "./login.html";
-});
-
-refreshAllBtn.addEventListener("click", async () => {
-  try {
-    await loadPricing();
-    await loadUsers();
-    await loadContractOrNull();
-  } catch (e) {
-    console.error(e);
-    showBanner("bad", `更新に失敗: ${e.message}`);
-  }
-});
-
-refreshUsersBtn.addEventListener("click", async () => {
-  try {
-    await loadUsers();
-  } catch (e) {
-    console.error(e);
-    showBanner("bad", `ユーザー一覧の取得に失敗: ${e.message}`);
-  }
 });
 
 addUserBtn.addEventListener("click", async () => {
