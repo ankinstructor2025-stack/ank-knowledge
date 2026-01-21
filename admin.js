@@ -566,7 +566,7 @@ async function loadUsers() {
 
   if (!result.exists) {
     // 未契約 → 契約導線へ
-    redirectToContract();
+    loadPricing();
     return;
   }
 
