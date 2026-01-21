@@ -414,6 +414,9 @@ function renderNoContract() {
   paymentMethodEl.textContent = "-";
   paidUntilEl.textContent = "-";
 
+  // 未契約でも、pricing が読めていれば契約作成できる
+  saveContractBtn.disabled = !pricing;
+
   hideBanner();
   saveContractBtn.disabled = true;
 
