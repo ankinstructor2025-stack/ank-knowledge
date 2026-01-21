@@ -1,7 +1,7 @@
+// admin.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
 
-/* Firebase */
 const firebaseConfig = {
   apiKey: "AIzaSyBpHlwulq6lnbmBzNm0rEYNahWk7liD3BM",
   authDomain: "ank-project-77283.firebaseapp.com",
@@ -15,15 +15,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 /**
- * ★ ank-admin-api のURL（末尾スラッシュなし）
+ * ★ Cloud Run のURL（末尾スラッシュなし）
  */
 const API_BASE = "https://ank-admin-api-986862757498.asia-northeast1.run.app";
-
-/**
- * tenant_id の保存キー
- * 契約開始（/contract/init）で発行された tenant_id をここに保存
- */
-const TENANT_KEY = "ank_tenant_id";
 
 // ===== DOM =====
 const $ = (id) => document.getElementById(id);
@@ -40,30 +34,34 @@ const panelContract = $("panel-contract");
 const panelUsers = $("panel-users");
 
 const logoutBtn = $("logoutBtn");
-const refreshAllBtn = $("refreshAllBtn");
 
+// contract display
 const contractIdEl = $("contractId");
 const contractStatusEl = $("contractStatus");
 const paymentMethodEl = $("paymentMethod");
 const paidUntilEl = $("paidUntil");
 
+const refreshAllBtn = $("refreshAllBtn");
+const initContractBtn = $("initContractBtn");
+const openBillingBtn = $("openBillingBtn");
+
 const seatLimitSelect = $("seatLimitSelect");
 const knowledgeCountSelect = $("knowledgeCountSelect");
+const saveContractBtn = $("saveContractBtn"); // ※APIがあれば有効化できる
 
-const saveContractBtn = $("saveContractBtn");   // ★このボタンを「新規/更新」共通にする
-const initContractBtn = $("initContractBtn");   // ★誤解を生むので隠す
-const openBillingBtn = $("openBillingBtn");     // ★無くても動くようにする（今回修正）
-
+// KPIs
 const kpiMonthly = $("kpiMonthly");
 const kpiBase = $("kpiBase");
 const kpiExtra = $("kpiExtra");
 const kpiSearchLimit = $("kpiSearchLimit");
 
+// pricing display
 const pricingSeatsTbody = $("pricingSeatsTbody");
 const pricingKnowledge = $("pricingKnowledge");
 const pricingSearchLimit = $("pricingSearchLimit");
 const pricingPoc = $("pricingPoc");
 
+// users
 const refreshUsersBtn = $("refreshUsersBtn");
 const userOps = $("userOps");
 const newUserEmail = $("newUserEmail");
@@ -73,12 +71,12 @@ const usersTbody = $("usersTbody");
 
 // ===== State =====
 let currentUser = null;
-let pricing = null;    // pricing.json（正規化済み）
-let contract = null;   // contract（契約済みなら object / 未契約なら null）
+let pricing = null;   // pricing.json（整形済み）
+let contract = null;  // contract json（未契約なら null）
 let users = [];
 let myRole = "member";
 
-// ===== UI helpers =====
+// ===== Helpers =====
 function showBanner(kind, text) {
   bannerEl.hidden = false;
   bannerEl.className = "banner";
@@ -106,6 +104,7 @@ function yen(n) {
   if (typeof n !== "number" || Number.isNaN(n)) return "-";
   return n.toLocaleString("ja-JP") + "円";
 }
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -114,6 +113,7 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 function fmtLastLogin(v) {
   if (!v) return "-";
   try {
@@ -125,40 +125,16 @@ function fmtLastLogin(v) {
   }
 }
 
-// ===== tenant_id =====
-function getTenantId() {
-  return localStorage.getItem(TENANT_KEY) || "";
-}
-function setTenantId(tid) {
-  if (tid) localStorage.setItem(TENANT_KEY, tid);
-}
-function clearTenantId() {
-  localStorage.removeItem(TENANT_KEY);
-}
-
-// ===== Billing redirect（今回追加）=====
-function tryRedirectToBilling(reason = "") {
-  const url = contract?.billing_url;
-  if (!url) return false;
-
-  // openBillingBtn がある場合は「自動遷移しない」運用にもできるが、
-  // いまは “導線が失われない” を優先して、ボタンが無い場合に自動遷移する。
-  if (!openBillingBtn) {
-    console.log(`[billing] redirect (${reason}) -> ${url}`);
-    location.href = url;
-    return true;
-  }
-
-  // ボタンがある場合はボタン経由で遷移（従来通り）
-  // ただし、UX上必要ならここを自動遷移に変えてもOK。
-  return false;
+function isNotFoundError(e) {
+  // apiFetch は "API error 404: ..." の形式
+  return String(e?.message || "").includes("API error 404");
 }
 
 // ===== API =====
 async function apiFetch(path, { method = "GET", body = null } = {}) {
   if (!currentUser) throw new Error("not signed in");
-  const token = await currentUser.getIdToken(true);
 
+  const token = await currentUser.getIdToken(true);
   const headers = {
     "Authorization": `Bearer ${token}`,
     "Content-Type": "application/json"
@@ -180,17 +156,14 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
   return null;
 }
 
-async function apiFetchWithTenant(path, opts = {}) {
-  const tid = getTenantId();
-  if (!tid) throw new Error("tenant_id is missing (not contracted yet)");
-  const sep = path.includes("?") ? "&" : "?";
-  return apiFetch(`${path}${sep}tenant_id=${encodeURIComponent(tid)}`, opts);
-}
-
-// ===== Pricing =====
+// ===== Pricing logic =====
 function normalizePricing(p) {
   const seats = Array.isArray(p?.seats) ? p.seats : [];
+
+  // knowledge_count: [{value,label,monthly_price}] を優先
   const knowledge_count = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
+
+  // 旧形式のフォールバック（残っていてもOK）
   const legacyKnowledge = p?.knowledge || { base_included: 1, extra_monthly_fee: 0 };
 
   return {
@@ -204,8 +177,13 @@ function normalizePricing(p) {
 
 function getBaseFeeFromPricing(seatLimit) {
   if (!pricing) return null;
+
   const rows = pricing.seats
-    .map(x => ({ seat_limit: Number(x.seat_limit), monthly_fee: x.monthly_fee, label: x.label }))
+    .map(x => ({
+      seat_limit: Number(x.seat_limit),
+      monthly_fee: x.monthly_fee,
+      label: x.label
+    }))
     .filter(x => Number.isFinite(x.seat_limit))
     .sort((a, b) => a.seat_limit - b.seat_limit);
 
@@ -219,17 +197,25 @@ function getBaseFeeFromPricing(seatLimit) {
 }
 
 function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
+  // 新形式 knowledge_count を最優先
   if (pricing?.knowledge_count?.length) {
     const krows = pricing.knowledge_count
-      .map(x => ({ value: Number(x.value), monthly_price: Number(x.monthly_price ?? 0), label: x.label }))
+      .map(x => ({
+        value: Number(x.value),
+        monthly_price: Number(x.monthly_price ?? 0),
+        label: x.label
+      }))
       .filter(x => Number.isFinite(x.value))
       .sort((a, b) => a.value - b.value);
 
     const hit = krows.find(x => x.value === Number(knowledgeCount));
     if (hit) return Number.isFinite(hit.monthly_price) ? hit.monthly_price : 0;
+
+    // 定義外は危険なので null（丸めない）
     return null;
   }
 
+  // フォールバック（旧形式）
   const baseIncluded = Number(pricing?.knowledge?.base_included ?? 1);
   const extraUnit = Number(pricing?.knowledge?.extra_monthly_fee ?? 0);
   const extraCount = Math.max(0, Number(knowledgeCount) - baseIncluded);
@@ -237,7 +223,9 @@ function getKnowledgeMonthlyPriceFromPricing(knowledgeCount) {
 }
 
 function computeDerived({ seat_limit, knowledge_count }) {
-  if (!pricing) return { baseFee: null, extraKnowledgeFee: null, total: null, searchLimitPerDay: null };
+  if (!pricing) {
+    return { baseFee: null, extraKnowledgeFee: null, total: null, searchLimitPerDay: null };
+  }
 
   const seatLimit = Number(seat_limit || 0);
   const knowledgeCount = Number(knowledge_count || 1);
@@ -257,10 +245,14 @@ function computeDerived({ seat_limit, knowledge_count }) {
 }
 
 function renderEstimateFromUI() {
+  // 契約が無くても、選択値で見積もりを出す
   const seatLimit = Number(seatLimitSelect?.value || 0);
   const knowledgeCount = Number(knowledgeCountSelect?.value || 1);
 
-  const derived = computeDerived({ seat_limit: seatLimit, knowledge_count: knowledgeCount });
+  const derived = computeDerived({
+    seat_limit: seatLimit,
+    knowledge_count: knowledgeCount
+  });
 
   kpiBase.textContent = (derived.baseFee == null) ? "-" : yen(Number(derived.baseFee));
   kpiExtra.textContent = (derived.extraKnowledgeFee == null) ? "-" : yen(Number(derived.extraKnowledgeFee));
@@ -284,8 +276,13 @@ function renderPricing() {
     return;
   }
 
+  // seats table
   const seatRows = pricing.seats
-    .map(s => ({ seat_limit: Number(s.seat_limit), monthly_fee: s.monthly_fee, label: s.label }))
+    .map(s => ({
+      seat_limit: Number(s.seat_limit),
+      monthly_fee: s.monthly_fee,
+      label: s.label
+    }))
     .filter(x => Number.isFinite(x.seat_limit))
     .sort((a, b) => a.seat_limit - b.seat_limit);
 
@@ -296,24 +293,32 @@ function renderPricing() {
     return `<tr><td>${escapeHtml(lim)}</td><td>${escapeHtml(fee)}</td><td class="muted">${escapeHtml(note)}</td></tr>`;
   }).join("");
 
+  // seat options
   seatLimitSelect.innerHTML = "";
   for (const r of seatRows) {
+    const isConsult = (r.monthly_fee == null);
     const opt = document.createElement("option");
     opt.value = String(r.seat_limit);
-    opt.textContent = (r.monthly_fee == null)
+    opt.textContent = isConsult
       ? (r.label || `${r.seat_limit}人以上（要相談）`)
       : `${r.seat_limit}人まで`;
     seatLimitSelect.appendChild(opt);
   }
   seatLimitSelect.disabled = false;
 
+  // knowledge pricing + options
   if (pricing.knowledge_count?.length) {
     const krows = pricing.knowledge_count
-      .map(k => ({ value: Number(k.value), label: k.label ?? `${k.value}ナレッジ`, monthly_price: Number(k.monthly_price ?? 0) }))
+      .map(k => ({
+        value: Number(k.value),
+        label: k.label ?? `${k.value}ナレッジ`,
+        monthly_price: Number(k.monthly_price ?? 0)
+      }))
       .filter(x => Number.isFinite(x.value))
       .sort((a, b) => a.value - b.value);
 
-    pricingKnowledge.textContent = krows.map(x => `${x.label}: ${yen(x.monthly_price)}/月`).join(" / ");
+    pricingKnowledge.textContent =
+      krows.map(x => `${x.label}: ${yen(x.monthly_price)}/月`).join(" / ");
 
     knowledgeCountSelect.innerHTML = "";
     for (const k of krows) {
@@ -323,8 +328,13 @@ function renderPricing() {
       knowledgeCountSelect.appendChild(opt);
     }
     knowledgeCountSelect.disabled = false;
-    if (knowledgeCountSelect.options.length) knowledgeCountSelect.value = knowledgeCountSelect.options[0].value;
+
+    // 未契約時の初期値（先頭＝最小）を自然にする
+    if (knowledgeCountSelect.options.length) {
+      knowledgeCountSelect.value = knowledgeCountSelect.options[0].value;
+    }
   } else {
+    // フォールバック表示（旧形式のみのとき）
     const baseIncluded = Number(pricing.knowledge?.base_included ?? 1);
     const extraUnit = Number(pricing.knowledge?.extra_monthly_fee ?? 0);
     pricingKnowledge.textContent = `基本に含む: ${baseIncluded} / 追加: ${yen(extraUnit)} / 月`;
@@ -337,10 +347,12 @@ function renderPricing() {
     knowledgeCountSelect.disabled = false;
   }
 
+  // search limit
   const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
   const note = pricing.search_limit?.note ? `（${pricing.search_limit.note}）` : "";
   pricingSearchLimit.textContent = `利用者数 × ${perUser}回/日 ${note}`.trim();
 
+  // poc
   if (pricing.poc) {
     pricingPoc.textContent = `${pricing.poc.knowledge_types}種類 / ${pricing.poc.days}日 / ${yen(Number(pricing.poc.price))}`;
   } else {
@@ -352,21 +364,12 @@ async function loadPricing() {
   const p = await apiFetch(`/pricing`, { method: "GET" });
   pricing = normalizePricing(p);
   renderPricing();
+
+  // pricing が揃ったら、未契約でも初期見積もりを出す（select初期値で）
   renderEstimateFromUI();
 }
 
 // ===== Contract =====
-function setPrimaryContractButton() {
-  const hasTenant = !!getTenantId();
-  if (!hasTenant) {
-    saveContractBtn.textContent = "新規契約を開始する";
-    saveContractBtn.disabled = !pricing;
-    return;
-  }
-  saveContractBtn.textContent = "契約内容を更新する";
-  saveContractBtn.disabled = !(pricing && contract);
-}
-
 function renderContract() {
   contractBadge.textContent = `contract: ${contract?.contract_id ?? "-"}`;
   statusBadge.textContent = `status: ${contract?.status ?? "-"}`;
@@ -376,6 +379,7 @@ function renderContract() {
   paymentMethodEl.textContent = contract?.payment_method_configured ? "設定済み" : "未設定";
   paidUntilEl.textContent = contract?.paid_until ?? "-";
 
+  // 契約値があれば select に反映
   if (contract?.seat_limit && seatLimitSelect.options.length) {
     seatLimitSelect.value = String(contract.seat_limit);
   }
@@ -385,6 +389,7 @@ function renderContract() {
     knowledgeCountSelect.value = has ? v : knowledgeCountSelect.options[0].value;
   }
 
+  // KPI は select の値で再計算
   renderEstimateFromUI();
 
   hideBanner();
@@ -395,22 +400,10 @@ function renderContract() {
     showBanner("bad", "契約が停止しています。検索は停止（または強い警告）対象です。");
   }
 
-  // openBillingBtn は “存在する場合のみ” 制御
-  if (openBillingBtn) {
-    openBillingBtn.disabled = !contract?.billing_url;
-    // billing_url があるなら表示（HTML側で消してない場合だけ）
-    openBillingBtn.style.display = contract?.billing_url ? "" : "none";
-  } else {
-    // ボタンが無い場合は、billing_urlが返ってきた瞬間に自動遷移
-    tryRedirectToBilling("renderContract");
-  }
-
-  setPrimaryContractButton();
+  saveContractBtn.disabled = !(pricing && contract);
 }
 
 function renderNoContract() {
-  contract = null;
-
   contractBadge.textContent = `contract: -`;
   statusBadge.textContent = `status: -`;
 
@@ -419,87 +412,70 @@ function renderNoContract() {
   paymentMethodEl.textContent = "-";
   paidUntilEl.textContent = "-";
 
-  if (openBillingBtn) {
-    openBillingBtn.disabled = true;
-    openBillingBtn.style.display = "none";
-  }
-
   hideBanner();
-  renderEstimateFromUI();
-  setPrimaryContractButton();
+  saveContractBtn.disabled = true;
 
-  users = [];
-  renderUsers();
-  roleBadge.textContent = `role: -`;
-  userOps.hidden = true;
+  // 未契約でも見積もりは出す
+  renderEstimateFromUI();
 }
 
 async function loadContractOrNull() {
-  if (!getTenantId()) {
-    renderNoContract();
-    return null;
+  try {
+    contract = await apiFetch(`/contract`, { method: "GET" });
+    renderContract();
+    return contract;
+  } catch (e) {
+    if (isNotFoundError(e)) {
+      contract = null;
+      renderNoContract();
+      return null;
+    }
+    throw e;
   }
-
-  const resp = await apiFetchWithTenant(`/contract`, { method: "GET" });
-  contract = resp?.contract ?? null;
-
-  if (!contract) {
-    renderNoContract();
-    return null;
-  }
-
-  renderContract();
-  return contract;
 }
 
-async function contractInitFromUI() {
-  const seat_limit = Number(seatLimitSelect?.value || 10);
-  const knowledge_count = Number(knowledgeCountSelect?.value || 1);
+async function initContract() {
+  // 初期値は pricing の最小に寄せる
+  let defaultSeat = 10;
+  if (pricing?.seats?.length) {
+    const sorted = pricing.seats
+      .map(s => Number(s.seat_limit))
+      .filter(n => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (sorted.length) defaultSeat = sorted[0];
+  }
 
-  const derived = computeDerived({ seat_limit, knowledge_count });
+  let defaultKnowledge = 1;
+  if (pricing?.knowledge_count?.length) {
+    const sortedK = pricing.knowledge_count
+      .map(k => Number(k.value))
+      .filter(n => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (sortedK.length) defaultKnowledge = sortedK[0];
+  }
 
   const payload = {
-    seat_limit,
-    knowledge_count,
-    monthly_price: (derived.total == null) ? 50000 : Number(derived.total),
-    search_limit_per_month: 1000,
+    seat_limit: defaultSeat,
+    knowledge_count: defaultKnowledge,
     status: "active",
     payment_method_configured: false
   };
 
-  const resp = await apiFetch(`/contract/init`, { method: "POST", body: payload });
-
-  const tenantId = resp?.tenant_id;
-  if (tenantId) setTenantId(tenantId);
-
-  // サーバが billing_url を返す場合があるので、契約取得前に契約オブジェクトを暫定反映してもよい
-  // ただし、最終的にはGET /contractで確定させる
+  await apiFetch(`/contract/init`, { method: "POST", body: payload });
   await loadContractOrNull();
-  await loadUsers();
 }
 
-// select変更で見積もり更新
-seatLimitSelect.addEventListener("change", () => renderEstimateFromUI());
-knowledgeCountSelect.addEventListener("change", () => renderEstimateFromUI());
-
-// ★同じボタンで「新規/更新」
-saveContractBtn.addEventListener("click", async () => {
-  try {
-    if (!getTenantId()) {
-      await contractInitFromUI();
-      return;
-    }
-    alert("契約内容の更新API（POST /contract/update）が未実装です。先にAPI側を実装したらここで呼びます。");
-  } catch (e) {
-    console.error(e);
-    showBanner("bad", `処理に失敗: ${e.message}`);
-  }
+// select 変更で即見積もり
+seatLimitSelect.addEventListener("change", () => {
+  renderEstimateFromUI();
+});
+knowledgeCountSelect.addEventListener("change", () => {
+  renderEstimateFromUI();
 });
 
-// 「初期化」ボタンは誤解防止で隠す
-if (initContractBtn) {
-  initContractBtn.style.display = "none";
-}
+saveContractBtn.addEventListener("click", async () => {
+  alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");
+});
 
 // ===== Users =====
 function computeMyRole() {
@@ -529,6 +505,7 @@ function renderUsers() {
 
   for (const u of users) {
     const tr = document.createElement("tr");
+
     const email = u.email ?? "-";
     const role = u.role ?? "member";
     const status = u.status ?? "active";
@@ -580,33 +557,36 @@ function renderUsers() {
 }
 
 async function loadUsers() {
-  if (!getTenantId()) {
-    users = [];
-    renderUsers();
-    roleBadge.textContent = `role: -`;
-    userOps.hidden = true;
+  const email = authUser.email; // ← ログイン成功時に取得している想定
+
+  const result = await apiFetch(
+    `/v1/user-check?email=${encodeURIComponent(email)}`,
+    { method: "GET" }
+  );
+
+  if (!result.exists) {
+    // 未契約 → 契約導線へ
+    redirectToContract();
     return;
   }
 
-  const resp = await apiFetchWithTenant(`/users`, { method: "GET" });
-  users = Array.isArray(resp?.users) ? resp.users : [];
-  renderUsers();
+  // 契約済
+  myUserId = result.user_id;
   computeMyRole();
 }
 
 async function addUser(email, role) {
-  await apiFetchWithTenant(`/users`, { method: "POST", body: { email, role } });
+  await apiFetch(`/users`, {
+    method: "POST",
+    body: { email, role }
+  });
 }
 
 async function updateUser(email, patch) {
-  const body = {
-    tenant_id: getTenantId(),
-    users: users.map(u => {
-      if ((u.email || "").toLowerCase() !== (email || "").toLowerCase()) return u;
-      return { ...u, ...patch };
-    })
-  };
-  await apiFetch(`/users/update`, { method: "POST", body });
+  await apiFetch(`/users/update`, {
+    method: "POST",
+    body: { email, patch }
+  });
 }
 
 // ===== Events =====
@@ -618,24 +598,30 @@ logoutBtn.addEventListener("click", async () => {
 refreshAllBtn.addEventListener("click", async () => {
   try {
     await loadPricing();
-    await loadContractOrNull();
     await loadUsers();
+    await loadContractOrNull();
   } catch (e) {
     console.error(e);
     showBanner("bad", `更新に失敗: ${e.message}`);
   }
 });
 
-// openBillingBtn は “存在する場合のみ” バインド
-if (openBillingBtn) {
-  openBillingBtn.addEventListener("click", async () => {
-    if (contract?.billing_url) {
-      location.href = contract.billing_url;
-      return;
-    }
-    alert("billing_url が未設定です（APIが返すようにしてください）。");
-  });
-}
+initContractBtn.addEventListener("click", async () => {
+  try {
+    await initContract();
+  } catch (e) {
+    console.error(e);
+    showBanner("warn", `契約初期化: ${e.message}`);
+  }
+});
+
+openBillingBtn.addEventListener("click", async () => {
+  if (contract?.billing_url) {
+    location.href = contract.billing_url;
+    return;
+  }
+  alert("billing_url が未設定です（APIが返すようにしてください）。");
+});
 
 refreshUsersBtn.addEventListener("click", async () => {
   try {
@@ -673,22 +659,19 @@ onAuthStateChanged(auth, async (u) => {
     return;
   }
 
+  // body を display:none にしている場合でも、ログイン後に必ず表示
   document.body.style.display = "block";
 
   currentUser = u;
   userEmailEl.textContent = u.email || "-";
+
   setActiveTab("contract");
 
   try {
+    // pricing → users → contract の順
     await loadPricing();
-
-    if (!getTenantId()) {
-      renderNoContract();
-      return;
-    }
-
-    await loadContractOrNull();
     await loadUsers();
+    await loadContractOrNull();
   } catch (e) {
     console.error(e);
     showBanner("bad", `初期化に失敗: ${e.message}`);
