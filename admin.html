@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Admin</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", sans-serif; margin: 0; }
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+        "Noto Sans JP", sans-serif;
+      margin: 0;
+    }
     header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
     .left { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
     .right { display:flex; gap:8px; align-items:center; }
@@ -124,6 +128,18 @@
         </div>
         <div class="col" style="align-self:end;">
           <button id="saveContractBtn" class="primary" disabled>契約内容を保存</button>
+          <div class="muted">※ 実装はAPI側（POST /contract/update など）で受ける</div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="col">
+          <button id="initContractBtn" class="primary">契約を初期化（初回）</button>
+          <div class="muted">※ 契約が無い場合に作成します</div>
+        </div>
+        <div class="col">
+          <button id="openBillingBtn">支払い設定ページへ</button>
+          <div class="muted">※ APIが billing_url を返す場合、そこへ遷移します</div>
         </div>
       </div>
     </div>

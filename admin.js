@@ -136,10 +136,12 @@ async function apiFetch(path, { method = "GET", body = null } = {}) {
 
   const token = await currentUser.getIdToken(true);
   const headers = {
-    "Authorization": `Bearer ${token}`,
-    "Content-Type": "application/json"
+    "Authorization": `Bearer ${token}`
   };
 
+  if (body != null) {
+    headers["Content-Type"] = "application/json";
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
@@ -557,7 +559,7 @@ function renderUsers() {
 }
 
 async function loadUsers() {
-  const email = authUser.email; // ← ログイン成功時に取得している想定
+  const email = currentUser.email; // ← ログイン成功時に取得している想定
 
   const result = await apiFetch(
     `/v1/user-check?email=${encodeURIComponent(email)}`,
