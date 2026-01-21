@@ -42,8 +42,6 @@ const paymentMethodEl = $("paymentMethod");
 const paidUntilEl = $("paidUntil");
 
 const refreshAllBtn = $("refreshAllBtn");
-const initContractBtn = $("initContractBtn");
-const openBillingBtn = $("openBillingBtn");
 
 const seatLimitSelect = $("seatLimitSelect");
 const knowledgeCountSelect = $("knowledgeCountSelect");
@@ -609,23 +607,6 @@ refreshAllBtn.addEventListener("click", async () => {
     console.error(e);
     showBanner("bad", `更新に失敗: ${e.message}`);
   }
-});
-
-initContractBtn.addEventListener("click", async () => {
-  try {
-    await initContract();
-  } catch (e) {
-    console.error(e);
-    showBanner("warn", `契約初期化: ${e.message}`);
-  }
-});
-
-openBillingBtn.addEventListener("click", async () => {
-  if (contract?.billing_url) {
-    location.href = contract.billing_url;
-    return;
-  }
-  alert("billing_url が未設定です（APIが返すようにしてください）。");
 });
 
 refreshUsersBtn.addEventListener("click", async () => {
