@@ -478,7 +478,7 @@ saveContractBtn.addEventListener("click", async () => {
     const seat_limit = Number(seatLimitSelect.value);
     const knowledge_count = Number(knowledgeCountSelect.value);
 
-    const res = await apiFetch("/v1/contract", {
+    const res = await apiFetch(`/v1/contract?user_id=${encodeURIComponent(currentUser.uid)}`, {
       method: "POST",
       body: { seat_limit, knowledge_count }
     });
