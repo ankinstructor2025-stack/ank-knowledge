@@ -420,9 +420,15 @@ function renderNoContract() {
   renderEstimateFromUI();
 }
 
+function getTenantId() {
+  if (!currentUser) return null;
+  return currentUser.uid; // ← tenant_id の正
+}
+
 async function loadContractOrNull() {
   try {
-    contract = await apiFetch(`/contract`, { method: "GET" });
+    const tenantId = getTenantId();
+    contract = await apiFetch(`/v1/contract?tenant_id=${encodeURIComponent(tenantId)}`, { method: "GET" });
     renderContract();
     return contract;
   } catch (e) {
