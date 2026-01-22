@@ -261,6 +261,8 @@ function renderEstimateFromUI() {
 }
 
 function renderPricing() {
+  console.log("renderPricing called");
+
   if (!pricing) {
     pricingSeatsTbody.innerHTML = `<tr><td colspan="3" class="muted">pricing.json が未読込です</td></tr>`;
     pricingKnowledge.textContent = "-";
@@ -358,7 +360,7 @@ function renderPricing() {
 }
 
 async function loadPricing() {
-  const p = await apiFetch(`/pricing`, { method: "GET" });
+  const p = await apiFetch(`/v1/pricing`, { method: "GET" });
   pricing = normalizePricing(p);
   renderPricing();
 
