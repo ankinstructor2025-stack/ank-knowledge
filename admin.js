@@ -420,13 +420,7 @@ function renderNoContract() {
   renderEstimateFromUI();
 }
 
-function getTenantId() {
-  if (!currentUser) return null;
-  return currentUser.uid; // ← tenant_id の正
-}
-
 async function loadContract() {
-  const tenantId = getTenantId();
   const res = await apiFetch(`/v1/contract?user_id=${encodeURIComponent(currentUser.uid)}`);
 
   if (!res.contract) {
@@ -648,7 +642,7 @@ onAuthStateChanged(auth, async (u) => {
 
   await loadPricing();         // UI成立（必須）
   const me = await checkUser(); // 状態確定（必要なら）
-  //await loadContract();
+  await loadContract();
 
   // 契約済みならUsersタブを解放、など
   if (me.isContracted) {
