@@ -415,7 +415,6 @@ function renderNoContract() {
   saveContractBtn.disabled = !pricing;
 
   hideBanner();
-  saveContractBtn.disabled = true;
 
   // 未契約でも見積もりは出す
   renderEstimateFromUI();
