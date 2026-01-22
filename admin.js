@@ -472,7 +472,26 @@ knowledgeCountSelect.addEventListener("change", () => {
 });
 
 saveContractBtn.addEventListener("click", async () => {
-  alert("契約内容の保存APIが未実装です。API側に /contract/update を用意したら有効化します。");
+  saveContractBtn.disabled = true;
+
+  try {
+    const seat_limit = Number(seatLimitSelect.value);
+    const knowledge_count = Number(knowledgeCountSelect.value);
+
+    const res = await apiFetch("/v1/contracts", {
+      method: "POST",
+      body: { seat_limit, knowledge_count }
+    });
+
+    // 作成成功 → 再読み込み
+    await loadContract();
+    //resolveInitialState();
+
+  } catch (e) {
+    alert(`契約作成に失敗しました: ${e.message}`);
+  } finally {
+    saveContractBtn.disabled = false;
+  }
 });
 
 // ===== Users =====
