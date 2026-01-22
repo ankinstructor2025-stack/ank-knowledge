@@ -466,7 +466,7 @@ async function initContract() {
   };
 
   await apiFetch(`/contract/init`, { method: "POST", body: payload });
-  await loadContractOrNull();
+  await loadContract();
 }
 
 // select 変更で即見積もり
@@ -648,7 +648,7 @@ onAuthStateChanged(auth, async (u) => {
 
   await loadPricing();         // UI成立（必須）
   const me = await checkUser(); // 状態確定（必要なら）
-  await loadContractOrNull();
+  await loadContract();
 
   // 契約済みならUsersタブを解放、など
   if (me.isContracted) {
