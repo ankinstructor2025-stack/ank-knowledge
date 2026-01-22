@@ -425,19 +425,16 @@ function getTenantId() {
   return currentUser.uid; // ← tenant_id の正
 }
 
-async function loadContractOrNull() {
-  try {
-    const tenantId = getTenantId();
-    contract = await apiFetch(`/v1/contract?tenant_id=${encodeURIComponent(tenantId)}`, { method: "GET" });
+async function loadContract() {
+  const tenantId = getTenantId();
+  const res = await apiFetch(`/v1/contract?tenant_id=${tenantId}`);
+
+  if (!res.contract) {
+    contract = null;
+    renderNoContract();
+  } else {
+    contract = res.contract;
     renderContract();
-    return contract;
-  } catch (e) {
-    if (isNotFoundError(e)) {
-      contract = null;
-      renderNoContract();
-      return null;
-    }
-    throw e;
   }
 }
 
