@@ -427,7 +427,7 @@ function getTenantId() {
 
 async function loadContract() {
   const tenantId = getTenantId();
-  const res = await apiFetch(`/v1/contract?tenant_id=${tenantId}`);
+  const res = await apiFetch(`/v1/contract?user_id=${encodeURIComponent(currentUser.uid)}`);
 
   if (!res.contract) {
     contract = null;
