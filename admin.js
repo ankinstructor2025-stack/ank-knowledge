@@ -651,6 +651,7 @@ onAuthStateChanged(auth, async (u) => {
 
   await loadPricing();         // UI成立（必須）
   const me = await checkUser(); // 状態確定（必要なら）
+  await loadContractOrNull();
 
   // 契約済みならUsersタブを解放、など
   if (me.isContracted) {
