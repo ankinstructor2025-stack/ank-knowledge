@@ -556,6 +556,24 @@ function renderUsers() {
   }
 }
 
+async function checkUser() {
+  const email = currentUser.email;
+
+  const result = await apiFetch(
+    `/v1/user-check?email=${encodeURIComponent(email)}`,
+    { method: "GET" }
+  );
+
+  // 契約状態
+  const isContracted = !!result.exists;
+
+  // role（必要ならここで返す）
+  return {
+    isContracted,
+    user_id: result.user_id ?? null
+  };
+}
+
 async function loadUsers() {
   const email = currentUser.email; // ← ログイン成功時に取得している想定
 
@@ -617,16 +635,18 @@ addUserBtn.addEventListener("click", async () => {
 
 // ===== Boot =====
 onAuthStateChanged(auth, async (u) => {
-  if (!u) {
-    location.replace("./login.html");
-    return;
-  }
+  if (!u) { location.replace("./login.html"); return; }
 
-  // body を display:none にしている場合でも、ログイン後に必ず表示
   document.body.style.display = "block";
-
   currentUser = u;
-  userEmailEl.textContent = u.email || "-";
 
   setActiveTab("contract");
+
+  await loadPricing();         // UI成立（必須）
+  const me = await checkUser(); // 状態確定（必要なら）
+
+  // 契約済みならUsersタブを解放、など
+  if (me.isContracted) {
+    // ここで必要なら role を取る、contractを読む、など
+  }
 });
