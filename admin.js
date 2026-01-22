@@ -478,9 +478,15 @@ saveContractBtn.addEventListener("click", async () => {
     const seat_limit = Number(seatLimitSelect.value);
     const knowledge_count = Number(knowledgeCountSelect.value);
 
-    const res = await apiFetch(`/v1/contract?user_id=${encodeURIComponent(currentUser.uid)}`, {
+    const res = await apiFetch(`/v1/contract`, {
       method: "POST",
-      body: { seat_limit, knowledge_count }
+      body: {
+        user_id: currentUser.uid,
+        email: currentUser.email,
+        display_name: currentUser.displayName || "",
+        seat_limit,
+        knowledge_count,
+      }
     });
 
     // 作成成功 → 再読み込み
