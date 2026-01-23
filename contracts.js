@@ -70,3 +70,23 @@ async function loadContracts() {
     tbody.appendChild(tr);
   }
 }
+
+async function initContractsPage() {
+  // まず「契約があるか」を確認（/v1/contract は token の uid を使う）
+  const res = await apiFetch("/v1/contract");
+
+  if (!res.contract) {
+    location.href = "contract_create.html";
+    return;
+  }
+
+  await loadContracts();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initContractsPage().catch((e) => {
+    console.error(e);
+    alert("契約情報の取得に失敗しました。ログインし直してください。");
+    location.href = "login.html";
+  });
+});

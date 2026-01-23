@@ -51,7 +51,7 @@ btnEl.addEventListener("click", async () => {
     console.log("login user:", user.email);
 
     // 次の画面へ
-    location.href = "./admin.html";
+    location.href = "./contracts.html";
 
   } catch (err) {
     console.error(err);
