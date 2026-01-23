@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>招待の確認</title>
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+      margin: 0;
+      background: #fafafa;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 12px;
+    }
+    p {
+      margin: 8px 0;
+      line-height: 1.6;
+      color: #111827;
+    }
+    .muted {
+      color: #6b7280;
+      font-size: 13px;
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    button {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f3f4f6;
+      color: #111827;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .status.error {
+      background: #fef2f2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    .status.ok {
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>招待の確認</h1>
+
+      <p id="desc">読み込み中...</p>
+      <p class="muted" id="tokenInfo"></p>
+
+      <div class="row">
+        <button class="primary" id="loginBtn">ログインして続ける</button>
+        <button id="acceptBtn" disabled>参加を確定する</button>
+        <button id="clearBtn">招待情報を消す</button>
+      </div>
+
+      <div id="status" class="status muted" style="display:none;"></div>
+
+      <p class="muted" style="margin-top: 18px;">
+        ※ 招待メールを受け取った方のみ登録できます。<br>
+        ※ 心当たりがない場合は、このページを閉じてください。
+      </p>
+    </div>
+  </div>
+
+  <!-- Firebase（login.html / admin.html と同じ） -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
+
+  <!-- 招待ロジック -->
+  <script src="./invite.js"></script>
+</body>
+</html>

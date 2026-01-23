@@ -630,6 +630,15 @@ async function updateUser(email, patch) {
   });
 }
 
+async function inviteUser(selectedContractId, email) {
+  const res = await apiFetch("/v1/invites", {
+    method: "POST",
+    body: { contract_id: selectedContractId, email }
+  });
+  alert("招待メールを送信しました");
+  return res;
+}
+
 // ===== Events =====
 logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
