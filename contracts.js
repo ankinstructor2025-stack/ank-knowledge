@@ -87,6 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initContractsPage().catch((e) => {
     console.error(e);
     alert("契約情報の取得に失敗しました。ログインし直してください。");
-    location.href = "login.html";
+    location.href = "admin.html";
   });
 });
