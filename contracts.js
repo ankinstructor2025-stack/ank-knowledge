@@ -1,43 +1,36 @@
+import { initFirebase, requireUser } from "./ank_firebase.js";
+import { apiFetch } from "./ank_api.js";
+
+const { auth } = initFirebase();
+
 function roleLabel(role) {
   if (role === "admin") return "管理者";
   if (role === "member") return "メンバー";
   return role ?? "-";
 }
-
 function openContractDetail(contractId) {
   location.href = `contract_detail.html?contract_id=${encodeURIComponent(contractId)}`;
 }
-
 function editContract(contractId) {
   location.href = `contract_edit.html?contract_id=${encodeURIComponent(contractId)}`;
 }
-
 function openMembers(contractId) {
   location.href = `members.html?contract_id=${encodeURIComponent(contractId)}`;
 }
 
-async function loadContracts() {
-  const contracts = await apiFetch("/v1/contracts");
+async function loadContracts(currentUser) {
+  const contracts = await apiFetch(currentUser, "/v1/contracts");
 
   const tbody = document.querySelector("#contractsTable tbody");
   tbody.innerHTML = "";
 
   for (const c of contracts) {
     const tr = document.createElement("tr");
-
-    // 行クリック：詳細へ
     tr.style.cursor = "pointer";
     tr.addEventListener("click", () => openContractDetail(c.contract_id));
 
-    // ボタン押下で行クリックが発火しないように止める
-    const stopRowClick = (e) => e.stopPropagation();
-
-    // 操作列（adminのみ編集・メンバー一覧）
     const actionsHtml = (c.role === "admin")
-      ? `
-        <button class="btnEdit">編集</button>
-        <button class="btnMembers">メンバー</button>
-      `
+      ? `<button class="btnEdit">編集</button><button class="btnMembers">メンバー</button>`
       : `-`;
 
     tr.innerHTML = `
@@ -51,18 +44,13 @@ async function loadContracts() {
       <td>${actionsHtml}</td>
     `;
 
-    // admin のときだけボタンにハンドラを付ける
     if (c.role === "admin") {
-      const btnEdit = tr.querySelector(".btnEdit");
-      const btnMembers = tr.querySelector(".btnMembers");
-
-      btnEdit.addEventListener("click", (e) => {
-        stopRowClick(e);
+      tr.querySelector(".btnEdit").addEventListener("click", (e) => {
+        e.stopPropagation();
         editContract(c.contract_id);
       });
-
-      btnMembers.addEventListener("click", (e) => {
-        stopRowClick(e);
+      tr.querySelector(".btnMembers").addEventListener("click", (e) => {
+        e.stopPropagation();
         openMembers(c.contract_id);
       });
     }
@@ -71,22 +59,19 @@ async function loadContracts() {
   }
 }
 
-async function initContractsPage() {
-  // まず「契約があるか」を確認（/v1/contract は token の uid を使う）
-  const res = await apiFetch("/v1/contract");
+(async function boot() {
+  // ここだけ変更：adminへ飛ばさず login.html
+  const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
+  const res = await apiFetch(currentUser, "/v1/contract");
   if (!res.contract) {
     location.href = "contract_create.html";
     return;
   }
 
-  await loadContracts();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  initContractsPage().catch((e) => {
-    console.error(e);
-    alert("契約情報の取得に失敗しました。ログインし直してください。");
-    location.href = "admin.html";
-  });
+  await loadContracts(currentUser);
+})().catch((e) => {
+  console.error(e);
+  alert("契約情報の取得に失敗しました。ログインし直してください。");
+  location.href = "./login.html";
 });
