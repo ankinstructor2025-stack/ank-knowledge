@@ -89,7 +89,7 @@ btnLogout.onclick = async () => {
 btnSearch.onclick = () => goto("./qa_search.html");
 
 // 管理者メニュー（ファイルが未作成なら後で差し替え）
-btnContracts && (btnContracts.onclick = () => goto("./admin_contracts.html"));
+btnContracts && (btnContracts.onclick = () => goto("./contracts.html"));
 btnMembers && (btnMembers.onclick = () => goto("./admin_members.html"));
 btnKnowledge && (btnKnowledge.onclick = () => goto("./admin_knowledge.html"));
 btnAdminSearch && (btnAdminSearch.onclick = () => goto("./qa_search.html"));
