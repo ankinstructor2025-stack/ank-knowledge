@@ -20,14 +20,29 @@ export function initFirebase() {
 }
 
 // ログイン必須画面で使う（未ログインなら login へ飛ばす）
-export function requireUser(auth, { loginUrl = "./login.html" } = {}) {
-  return new Promise((resolve) => {
-    onAuthStateChanged(auth, (u) => {
-      if (!u) {
-        location.replace(loginUrl);
-        return;
-      }
+export async function requireUser(auth, { loginUrl = "./login.html" } = {}) {
+  // v12 は authStateReady() が使える。初期化完了後に currentUser を確定させる
+  if (typeof auth.authStateReady === "function") {
+    await auth.authStateReady();
+    const u = auth.currentUser;
+    if (!u) {
+      location.replace(loginUrl);
+      throw new Error("not signed in");
+    }
+    return u;
+  }
+
+  // フォールバック（古い環境向け）
+  return await new Promise((resolve) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      if (!u) return;
+      unsub();
       resolve(u);
     });
+    // それでも取れなければ未ログイン扱い
+    setTimeout(() => {
+      unsub();
+      location.replace(loginUrl);
+    }, 1200);
   });
 }
