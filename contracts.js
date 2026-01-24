@@ -17,37 +17,45 @@ function safeText(s) {
   return t ? t : "-";
 }
 
-function openContractDetail(contractId) {
-  location.href = `contract_detail.html?contract_id=${encodeURIComponent(contractId)}`;
-}
-function editContract(contractId) {
+function openContractEdit(contractId) {
   location.href = `contract_edit.html?contract_id=${encodeURIComponent(contractId)}`;
 }
-function openMembers(contractId) {
+
+function openMembers(contractId, paymentConfigured) {
+  if (!paymentConfigured) {
+    alert("支払い設定が未完了です。先に「支払い設定へ」を実行してください。");
+    return;
+  }
   location.href = `members.html?contract_id=${encodeURIComponent(contractId)}`;
 }
 
 async function loadContracts(currentUser) {
+  const tbody = document.querySelector("#contractsTable tbody");
+  tbody.innerHTML = `<tr><td colspan="9" class="muted">読み込み中...</td></tr>`;
+
   const contracts = await apiFetch(currentUser, "/v1/contracts");
 
-  const tbody = document.querySelector("#contractsTable tbody");
   tbody.innerHTML = "";
+  if (!contracts || contracts.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="muted">契約がありません。「新規契約」から作成してください。</td></tr>`;
+    return;
+  }
 
   for (const c of contracts) {
     const tr = document.createElement("tr");
     tr.style.cursor = "pointer";
-    tr.addEventListener("click", () => openContractDetail(c.contract_id));
+    tr.addEventListener("click", () => openContractEdit(c.contract_id));
 
-    const actionsHtml = (c.role === "admin")
-      ? `<button class="btnEdit">編集</button><button class="btnMembers">メンバー</button>`
-      : `-`;
+    const actionsHtml =
+      c.role === "admin"
+        ? `<button class="btnEdit">編集</button><button class="btnMembers">メンバー</button>`
+        : `-`;
 
-    // note は一覧識別用：長い場合はCSSで省略
     const note = safeText(c.note);
 
     tr.innerHTML = `
       <td><code>${c.contract_id}</code></td>
-      <td class="note" title="${(c.note ?? "").toString().replaceAll('"','&quot;')}">${note}</td>
+      <td class="note" title="${(c.note ?? "").toString().replaceAll('"', "&quot;")}">${note}</td>
       <td>${yen(c.monthly_amount_yen)}</td>
       <td>${roleLabel(c.role)}</td>
       <td>${c.contract_status ?? "-"}</td>
@@ -60,31 +68,24 @@ async function loadContracts(currentUser) {
     if (c.role === "admin") {
       tr.querySelector(".btnEdit").addEventListener("click", (e) => {
         e.stopPropagation();
-        editContract(c.contract_id);
+        openContractEdit(c.contract_id);
       });
       tr.querySelector(".btnMembers").addEventListener("click", (e) => {
         e.stopPropagation();
-        openMembers(c.contract_id);
+        openMembers(c.contract_id, !!c.payment_method_configured);
       });
     }
 
     tbody.appendChild(tr);
-  }
-
-  // 0件のときの表示
-  if (!contracts || contracts.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="muted">契約がありません。「新規契約」から作成してください。</td></tr>`;
   }
 }
 
 (async function boot() {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
-  // 表示（任意）
   const whoami = document.getElementById("whoami");
   if (whoami) whoami.textContent = currentUser.email || "";
 
-  // 新規契約ボタン
   const createBtn = document.getElementById("createContractBtn");
   if (createBtn) {
     createBtn.addEventListener("click", () => {
@@ -93,9 +94,8 @@ async function loadContracts(currentUser) {
   }
 
   await loadContracts(currentUser);
-
 })().catch((e) => {
   console.error(e);
-  alert("契約情報の取得に失敗しました。ログインし直してください。");
+  alert(`契約情報の取得に失敗しました:\n${e.message}`);
   location.href = "./login.html";
 });
