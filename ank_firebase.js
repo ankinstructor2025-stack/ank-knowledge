@@ -22,7 +22,7 @@ export function initFirebase() {
  * - "一瞬null" を即未ログイン扱いにしない
  * - 少し待っても user が来なければ login へ
  */
-export async function requireUser(auth, { loginUrl = "./contracts.html", waitMs = 3000 } = {}) {
+export async function requireUser(auth, { loginUrl = "./login.html", waitMs = 5000 } = {}) {
   // まず currentUser が既にあるなら即返す
   if (auth.currentUser) return auth.currentUser;
 
