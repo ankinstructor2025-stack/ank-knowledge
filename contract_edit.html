@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>契約の編集</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; background: #fafafa; }
+    .wrap { max-width: 860px; margin: 32px auto; padding: 0 16px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+    h1 { margin:0 0 10px; font-size:20px; }
+    .muted { color:#6b7280; font-size:13px; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
+    select, textarea, input { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; box-sizing:border-box; }
+    textarea { min-height:88px; resize:vertical; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin-top:16px; }
+    button { padding:10px 14px; border:1px solid #d1d5db; background:#fff; border-radius:10px; cursor:pointer; }
+    button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:14px; }
+    .kpi .box { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+    .kpi .title { font-size:12px; color:#6b7280; }
+    .kpi .val { margin-top:6px; font-size:16px; font-weight:700; }
+    .status { display:none; margin-top:12px; padding:10px 12px; border-radius:10px; background:#f3f4f6; font-size:14px; white-space:pre-wrap; }
+    .status.ok { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+    .status.error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
+    @media (max-width: 720px){ .row{grid-template-columns:1fr;} .kpi{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>契約の編集</h1>
+      <div class="muted">契約ID: <code id="contractId"></code></div>
+
+      <div class="row">
+        <div>
+          <label for="seatLimitSelect">人数（seat_limit）</label>
+          <select id="seatLimitSelect" disabled></select>
+        </div>
+        <div>
+          <label for="knowledgeCountSelect">ナレッジ数（knowledge_count）</label>
+          <select id="knowledgeCountSelect" disabled></select>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;">
+        <label for="note">コメント（任意）</label>
+        <textarea id="note" maxlength="400" placeholder="例：自社本番／検証用／顧客A向け など"></textarea>
+      </div>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="title">基本料金</div>
+          <div class="val" id="kpiBase">-</div>
+        </div>
+        <div class="box">
+          <div class="title">ナレッジ追加</div>
+          <div class="val" id="kpiExtra">-</div>
+        </div>
+        <div class="box">
+          <div class="title">月額合計（保存値）</div>
+          <div class="val" id="kpiMonthly">-</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button id="backBtn">戻る</button>
+        <div style="flex:1;"></div>
+
+        <!-- 支払い設定：いまは未実装でも置き場所はここが自然 -->
+        <button id="paymentBtn">支払い設定へ</button>
+
+        <button id="saveBtn" class="primary" disabled>更新する</button>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div class="muted" style="margin-top:10px;">
+        ※ 支払い設定は、決済連携（Stripe等）を入れたタイミングで有効化する想定。
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./contract_update.js"></script>
+</body>
+</html>
