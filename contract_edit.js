@@ -106,7 +106,8 @@ function fillSelects() {
   for (const r of seats) {
     const opt = document.createElement("option");
     opt.value = String(r.seat_limit);
-    opt.textContent = (r.monthly_fee == null) ? (r.label || `${r.seat_limit}人以上（要相談）`) : `${r.seat_limit}人まで`;
+    opt.textContent =
+      (r.monthly_fee == null) ? (r.label || `${r.seat_limit}人以上（要相談）`) : `${r.seat_limit}人まで`;
     seatSel.appendChild(opt);
   }
   seatSel.disabled = false;
@@ -127,11 +128,19 @@ function fillSelects() {
 }
 
 async function loadCurrentContractFromList(currentUser, contractId) {
-  // 現状、契約詳細APIはないので /v1/contracts から拾う（一覧APIは存在） :contentReference[oaicite:1]{index=1}
   const list = await apiFetch(currentUser, "/v1/contracts");
   const hit = (list || []).find((x) => x.contract_id === contractId);
   if (!hit) throw new Error("契約が見つかりません。");
   return hit;
+}
+
+// ✅ 追加：支払い設定を「完了扱い」にする
+async function markPaymentConfigured(currentUser, contractId) {
+  // サーバ側で payment_method_configured = true / start_at を確定する想定
+  return await apiFetch(currentUser, "/v1/contracts/mark-paid", {
+    method: "POST",
+    body: { contract_id: contractId },
+  });
 }
 
 (async function boot() {
@@ -146,11 +155,6 @@ async function loadCurrentContractFromList(currentUser, contractId) {
   contractIdEl.textContent = contractId;
 
   backBtn.addEventListener("click", () => location.href = "./contracts.html");
-
-  // 支払い設定ボタン（いまは置き場所だけ。APIができたら遷移に変える）
-  paymentBtn.addEventListener("click", async () => {
-    alert("支払い設定は決済連携（Stripe等）を入れたタイミングで有効化します。");
-  });
 
   // pricing を読む → セレクト構築
   const p = await apiFetch(currentUser, "/v1/pricing", { method: "GET" });
@@ -169,6 +173,24 @@ async function loadCurrentContractFromList(currentUser, contractId) {
 
   seatSel.addEventListener("change", renderEstimate);
   knowSel.addEventListener("change", renderEstimate);
+
+  // ✅ 「支払い設定へ」＝完了扱い
+  paymentBtn.addEventListener("click", async () => {
+    clearStatus();
+    paymentBtn.disabled = true;
+
+    try {
+      setStatus("支払い設定を完了しました（仮）。", "ok");
+      await markPaymentConfigured(currentUser, contractId);
+
+      // 一覧へ戻す
+      setTimeout(() => location.href = "./contracts.html", 350);
+    } catch (e) {
+      console.error(e);
+      setStatus(`支払い設定（仮）に失敗しました:\n${e.message}`, "error");
+      paymentBtn.disabled = false;
+    }
+  });
 
   saveBtn.addEventListener("click", async () => {
     clearStatus();
