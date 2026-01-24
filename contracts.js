@@ -60,16 +60,23 @@ async function loadContracts(currentUser) {
 }
 
 (async function boot() {
-  // ここだけ変更：adminへ飛ばさず login.html
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
-  const res = await apiFetch(currentUser, "/v1/contract");
-  if (!res.contract) {
-    location.href = "contract_create.html";
-    return;
+  // 表示（任意）
+  const whoami = document.getElementById("whoami");
+  if (whoami) whoami.textContent = currentUser.email || "";
+
+  // 新規契約ボタン
+  const createBtn = document.getElementById("createContractBtn");
+  if (createBtn) {
+    createBtn.addEventListener("click", () => {
+      location.href = "contract_create.html";
+    });
   }
 
+  // 一覧をロード
   await loadContracts(currentUser);
+
 })().catch((e) => {
   console.error(e);
   alert("契約情報の取得に失敗しました。ログインし直してください。");

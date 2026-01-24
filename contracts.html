@@ -2,10 +2,31 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>契約一覧</title>
+
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; padding: 24px; }
+    h1 { margin: 0 0 16px; font-size: 20px; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin: 0 0 12px; }
+    .toolbar .spacer { flex: 1; }
+    button { padding: 8px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 10px; cursor: pointer; }
+    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; }
+    th { font-weight: 600; }
+    .muted { color: #6b7280; font-size: 13px; }
+  </style>
 </head>
+
 <body>
+  <h1>契約一覧</h1>
+
+  <div class="toolbar">
+    <button id="createContractBtn" class="primary">新規契約</button>
+    <div class="spacer"></div>
+    <div class="muted" id="whoami"></div>
+  </div>
 
   <table id="contractsTable">
     <thead>
@@ -23,7 +44,6 @@
     <tbody></tbody>
   </table>
 
-  <!-- 重要：まず contracts.js を確実に読み込む -->
   <script type="module" src="./contracts.js"></script>
 </body>
 </html>
