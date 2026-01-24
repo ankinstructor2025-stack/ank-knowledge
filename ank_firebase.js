@@ -1,6 +1,4 @@
 // ank_firebase.js（共通）
-// Firebase v12 modular に統一
-
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
 
@@ -19,30 +17,51 @@ export function initFirebase() {
   return { app, auth };
 }
 
-// ログイン必須画面で使う（未ログインなら login へ飛ばす）
-export async function requireUser(auth, { loginUrl = "./login.html" } = {}) {
-  // v12 は authStateReady() が使える。初期化完了後に currentUser を確定させる
+/**
+ * ログイン必須画面で使う
+ * - "一瞬null" を即未ログイン扱いにしない
+ * - 少し待っても user が来なければ login へ
+ */
+export async function requireUser(auth, { loginUrl = "./login.html", waitMs = 3000 } = {}) {
+  // まず currentUser が既にあるなら即返す
+  if (auth.currentUser) return auth.currentUser;
+
+  // authStateReady がある環境はそれを優先
   if (typeof auth.authStateReady === "function") {
     await auth.authStateReady();
-    const u = auth.currentUser;
-    if (!u) {
-      location.replace(loginUrl);
-      throw new Error("not signed in");
-    }
-    return u;
+    if (auth.currentUser) return auth.currentUser;
+
+    location.replace(loginUrl);
+    throw new Error("not signed in");
   }
 
-  // フォールバック（古い環境向け）
-  return await new Promise((resolve) => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (!u) return;
-      unsub();
-      resolve(u);
+  // フォールバック：一定時間 user を待つ（nullを即判定しない）
+  const u = await new Promise((resolve) => {
+    const start = Date.now();
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        unsub();
+        resolve(user);
+        return;
+      }
+
+      // null が来ても即リダイレクトせず、waitMs だけ待つ
+      if (Date.now() - start >= waitMs) {
+        unsub();
+        resolve(null);
+      }
     });
-    // それでも取れなければ未ログイン扱い
+
+    // 念のためのタイムアウト（コールバックが来ないケース）
     setTimeout(() => {
-      unsub();
-      location.replace(loginUrl);
-    }, 1200);
+      try { unsub(); } catch {}
+      resolve(auth.currentUser || null);
+    }, waitMs + 500);
   });
+
+  if (!u) {
+    location.replace(loginUrl);
+    throw new Error("not signed in");
+  }
+  return u;
 }
