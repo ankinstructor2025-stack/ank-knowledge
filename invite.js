@@ -11,10 +11,10 @@ const { auth } = initFirebase();
 const elDesc = document.getElementById("desc");
 const elTokenInfo = document.getElementById("tokenInfo");
 const elStatus = document.getElementById("status");
-const loginBtn = document.getElementById("loginBtn");
 const acceptBtn = document.getElementById("acceptBtn");
 const clearBtn = document.getElementById("clearBtn");
 
+// utils
 function setStatus(msg, type = "") {
   elStatus.style.display = "block";
   elStatus.className = "status " + type;
@@ -27,9 +27,9 @@ function getQueryToken() {
 function saveToken(token) { localStorage.setItem(INVITE_TOKEN_KEY, token); }
 function loadToken() { return localStorage.getItem(INVITE_TOKEN_KEY); }
 function clearToken() { localStorage.removeItem(INVITE_TOKEN_KEY); }
-function gotoLogin() {
+function gotoLoginAuto() {
   const returnTo = encodeURIComponent(window.location.href);
-  window.location.href = `${LOGIN_URL}?return_to=${returnTo}`;
+  window.location.replace(`${LOGIN_URL}?return_to=${returnTo}`);
 }
 
 (async function main() {
@@ -44,28 +44,29 @@ function gotoLogin() {
     return;
   }
 
-  elDesc.textContent = "この招待で参加する場合、ログイン後に「参加を確定する」を押してください。";
+  elDesc.textContent = "「参加を確定する」を押して登録してください。";
   elTokenInfo.textContent = `招待トークン: ${token.slice(0, 8)}...`;
-
-  loginBtn.onclick = gotoLogin;
 
   let currentUser = null;
   acceptBtn.disabled = true;
-  setStatus("未ログインです。ログインしてください。");
+  setStatus("ログイン確認中...");
 
-  // ✅ modular 正式形
+  // 未ログインなら自動で login へ（ボタンは出さない）
   onAuthStateChanged(auth, (u) => {
     currentUser = u;
-    acceptBtn.disabled = !u;
-    setStatus(u ? "ログイン済みです。参加を確定できます。" : "未ログインです。ログインしてください。");
+    if (!u) {
+      setStatus("ログインが必要です。ログイン画面へ移動します...");
+      gotoLoginAuto();
+      return;
+    }
+    acceptBtn.disabled = false;
+    setStatus("ログイン済みです。参加を確定できます。");
   });
 
   acceptBtn.onclick = async () => {
     acceptBtn.disabled = true;
     try {
       setStatus("参加処理中...");
-
-      if (!currentUser) throw new Error("未ログインです");
 
       await apiFetch(currentUser, "/v1/invites/consume", {
         method: "POST",
@@ -74,6 +75,8 @@ function gotoLogin() {
 
       clearToken();
       setStatus("参加が確定しました。", "ok");
+      // 必要ならここで contracts.html へ戻す
+      // setTimeout(() => location.href = "./contracts.html", 400);
     } catch (e) {
       setStatus(e.message, "error");
       acceptBtn.disabled = false;
