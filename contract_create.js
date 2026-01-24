@@ -5,6 +5,8 @@ const { auth } = initFirebase();
 
 const seatSel = document.getElementById("seatLimitSelect");
 const knowSel = document.getElementById("knowledgeCountSelect");
+const noteEl = document.getElementById("note");
+
 const createBtn = document.getElementById("createBtn");
 const backBtn = document.getElementById("backBtn");
 const statusEl = document.getElementById("status");
@@ -29,6 +31,11 @@ function yen(n) {
   if (n == null || Number.isNaN(Number(n))) return "-";
   return Number(n).toLocaleString("ja-JP") + "円";
 }
+function clampNote(s) {
+  const t = (s ?? "").trim();
+  if (t.length <= 400) return t;
+  return t.slice(0, 400);
+}
 
 let pricing = null;
 
@@ -45,7 +52,7 @@ function fillSelectOptions() {
   const seats = pricing.seats
     .map((x) => ({
       seat_limit: Number(x.seat_limit),
-      monthly_fee: x.monthly_fee,
+      monthly_fee: x.monthly_fee, // NULLなら「要相談」
       label: x.label || "",
     }))
     .filter((x) => Number.isFinite(x.seat_limit))
@@ -55,7 +62,6 @@ function fillSelectOptions() {
   for (const r of seats) {
     const opt = document.createElement("option");
     opt.value = String(r.seat_limit);
-    // 月額がNULLなら「要相談」扱い
     opt.textContent = (r.monthly_fee == null)
       ? (r.label || `${r.seat_limit}人以上（要相談）`)
       : `${r.seat_limit}人まで`;
@@ -82,7 +88,6 @@ function fillSelectOptions() {
   }
   knowSel.disabled = false;
 
-  // 初期値
   if (seatSel.options.length) seatSel.value = seatSel.options[0].value;
   if (knowSel.options.length) knowSel.value = knowSel.options[0].value;
 }
@@ -107,6 +112,21 @@ function getKnowledgeFee(knowledgeCount) {
   return hit ? hit.monthly_price : null;
 }
 
+function computeMonthlyAmountYen() {
+  if (!pricing) return null;
+
+  const seatLimit = Number(seatSel.value || 0);
+  const knowledgeCount = Number(knowSel.value || 0);
+
+  const base = getBaseFee(seatLimit);
+  const extra = getKnowledgeFee(knowledgeCount);
+
+  // 要相談（NULL）や定義外は null（契約作成を無効）
+  if (base == null || extra == null) return null;
+
+  return Number(base) + Number(extra);
+}
+
 function renderEstimate() {
   if (!pricing) return;
 
@@ -115,9 +135,7 @@ function renderEstimate() {
 
   const base = getBaseFee(seatLimit);
   const extra = getKnowledgeFee(knowledgeCount);
-
-  // seat が「要相談（NULL）」の場合などは見積り不可扱い
-  const total = (base == null || extra == null) ? null : Number(base) + Number(extra);
+  const total = computeMonthlyAmountYen();
 
   const perUser = Number(pricing.search_limit?.per_user_per_day ?? 0);
   const searchLimitPerDay = (seatLimit && perUser) ? seatLimit * perUser : null;
@@ -127,8 +145,8 @@ function renderEstimate() {
   kpiMonthly.textContent = total == null ? "-" : yen(total);
   kpiSearchLimit.textContent = searchLimitPerDay == null ? "-" : `${searchLimitPerDay.toLocaleString("ja-JP")}回/日`;
 
-  // 契約作成ボタン：選択が有効であれば押せる（要相談は押せない）
-  createBtn.disabled = (base == null || extra == null);
+  // 月額が算出できるときだけ作成可能
+  createBtn.disabled = (total == null);
 }
 
 async function createContract(currentUser) {
@@ -138,6 +156,12 @@ async function createContract(currentUser) {
   try {
     const seat_limit = Number(seatSel.value);
     const knowledge_count = Number(knowSel.value);
+    const monthly_amount_yen = computeMonthlyAmountYen();
+    const note = clampNote(noteEl?.value || "");
+
+    if (monthly_amount_yen == null) {
+      throw new Error("金額が確定できません（要相談のプランの可能性があります）。");
+    }
 
     await apiFetch(currentUser, "/v1/contract", {
       method: "POST",
@@ -147,6 +171,8 @@ async function createContract(currentUser) {
         display_name: currentUser.displayName || "",
         seat_limit,
         knowledge_count,
+        monthly_amount_yen,
+        note,
       },
     });
 
@@ -170,7 +196,7 @@ async function createContract(currentUser) {
     location.href = "./contracts.html";
   });
 
-  // pricing 読み込み → セलेकト構築
+  // pricing 読み込み → セレクト構築
   const p = await apiFetch(currentUser, "/v1/pricing", { method: "GET" });
   pricing = normalizePricing(p);
 

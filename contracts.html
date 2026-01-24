@@ -13,9 +13,11 @@
     button { padding: 8px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 10px; cursor: pointer; }
     button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; }
-    th { font-weight: 600; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { font-weight: 600; white-space: nowrap; }
     .muted { color: #6b7280; font-size: 13px; }
+    .note { max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
   </style>
 </head>
 
@@ -32,11 +34,12 @@
     <thead>
       <tr>
         <th>契約ID</th>
+        <th>コメント</th>
+        <th>月額</th>
         <th>権限</th>
         <th>状態</th>
         <th>人数</th>
         <th>ナレッジ</th>
-        <th>有効期限</th>
         <th>支払い</th>
         <th>操作</th>
       </tr>

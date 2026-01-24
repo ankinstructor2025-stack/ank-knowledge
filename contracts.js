@@ -8,6 +8,15 @@ function roleLabel(role) {
   if (role === "member") return "メンバー";
   return role ?? "-";
 }
+function yen(n) {
+  if (n == null || Number.isNaN(Number(n))) return "-";
+  return Number(n).toLocaleString("ja-JP") + "円";
+}
+function safeText(s) {
+  const t = (s ?? "").toString().trim();
+  return t ? t : "-";
+}
+
 function openContractDetail(contractId) {
   location.href = `contract_detail.html?contract_id=${encodeURIComponent(contractId)}`;
 }
@@ -33,13 +42,17 @@ async function loadContracts(currentUser) {
       ? `<button class="btnEdit">編集</button><button class="btnMembers">メンバー</button>`
       : `-`;
 
+    // note は一覧識別用：長い場合はCSSで省略
+    const note = safeText(c.note);
+
     tr.innerHTML = `
-      <td>${c.contract_id}</td>
+      <td><code>${c.contract_id}</code></td>
+      <td class="note" title="${(c.note ?? "").toString().replaceAll('"','&quot;')}">${note}</td>
+      <td>${yen(c.monthly_amount_yen)}</td>
       <td>${roleLabel(c.role)}</td>
       <td>${c.contract_status ?? "-"}</td>
       <td>${c.seat_limit ?? "-"}</td>
       <td>${c.knowledge_count ?? "-"}</td>
-      <td>${c.current_period_end ? c.current_period_end.slice(0,10) : "-"}</td>
       <td>${c.payment_method_configured ? "設定済" : "未設定"}</td>
       <td>${actionsHtml}</td>
     `;
@@ -56,6 +69,11 @@ async function loadContracts(currentUser) {
     }
 
     tbody.appendChild(tr);
+  }
+
+  // 0件のときの表示
+  if (!contracts || contracts.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="muted">契約がありません。「新規契約」から作成してください。</td></tr>`;
   }
 }
 
@@ -74,7 +92,6 @@ async function loadContracts(currentUser) {
     });
   }
 
-  // 一覧をロード
   await loadContracts(currentUser);
 
 })().catch((e) => {

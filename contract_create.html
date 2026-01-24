@@ -16,10 +16,12 @@
     .muted { color: #6b7280; font-size: 13px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
     label { display: block; font-size: 13px; color: #374151; margin-bottom: 6px; }
-    select, input {
+    select, input, textarea {
       width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
       border-radius: 10px; background: #fff; font-size: 14px;
+      box-sizing: border-box;
     }
+    textarea { min-height: 88px; resize: vertical; }
     .toolbar { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
     button {
       padding: 10px 14px; border: 1px solid #d1d5db; background: #fff;
@@ -60,6 +62,12 @@
           <label for="knowledgeCountSelect">ナレッジ数（knowledge_count）</label>
           <select id="knowledgeCountSelect" disabled></select>
         </div>
+      </div>
+
+      <div style="margin-top: 14px;">
+        <label for="note">コメント（任意）</label>
+        <textarea id="note" maxlength="400" placeholder="例：自社本番／検証用／顧客A向け など"></textarea>
+        <div class="muted" style="margin-top: 6px;">※ 一覧で識別するためのメモです（最大400文字）</div>
       </div>
 
       <div class="kpi">
