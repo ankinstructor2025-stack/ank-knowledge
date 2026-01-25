@@ -1,7 +1,9 @@
-// qa_maintenance.js（修正版）
+// qa_maintenance.js（100MB / テキスト以外を即エラーで止める版）
+//
 // - 左：契約一覧（/v1/contracts の結果から admin+active のみ表示）
 // - 右：
 //    ① 対話データアップロード（署名付きURL方式）
+//       ★アップロード前に「テキスト以外」「100MB以上」をエラーにする
 //    ② 対話データ一覧（upload_logs kind='dialogue'）から 1つ有効化
 //    ③ 有効な対話データに対して QA作成ボタン
 //
@@ -46,6 +48,39 @@ function setActivateEnabled(enabled) {
 }
 function setBuildEnabled(enabled) {
   $("buildQaBtn").disabled = !enabled;
+}
+
+// ----------------------------
+// ここが今回の追加：アップロード前チェック
+// ----------------------------
+const MAX_BYTES = 100 * 1024 * 1024; // 100MB
+
+function isTextFile(file) {
+  // 1) MIME が取れるなら text/* を許可（ブラウザによって空のことがある）
+  const ct = (file?.type || "").toLowerCase();
+  if (ct.startsWith("text/")) return true;
+
+  // 2) 拡張子で許可（最低限）
+  const name = (file?.name || "").toLowerCase();
+  const okExt = [".txt", ".json", ".csv", ".md", ".log"];
+  return okExt.some((ext) => name.endsWith(ext));
+}
+
+function validateBeforeUpload(file) {
+  if (!file) return { ok: false, message: "ファイルが選択されていません" };
+
+  // サイズ
+  const size = Number(file.size || 0);
+  if (size > MAX_BYTES) {
+    return { ok: false, message: "100MB以上のファイルは非対応です" };
+  }
+
+  // テキスト判定（MIME or 拡張子）
+  if (!isTextFile(file)) {
+    return { ok: false, message: "テキスト以外のファイルは非対応です（.txt/.json/.csv など）" };
+  }
+
+  return { ok: true, message: "OK" };
 }
 
 // ----------------------------
@@ -155,11 +190,13 @@ async function loadContracts() {
 // ----------------------------
 
 async function requestUploadUrl({ contract_id, kind, file, note }) {
+  // ★今回：size_bytes を送る（サーバ側でも同じチェックを入れられる）
   const body = {
     contract_id,
     kind,
     filename: file.name,
     content_type: file.type || "application/octet-stream",
+    size_bytes: Number(file.size || 0),
     note: note || "",
   };
   return await apiFetch(currentUser, "/v1/admin/upload-url", { method: "POST", body });
@@ -191,12 +228,17 @@ async function onDryRun() {
   const kind = $("uploadKind").value;
   const note = $("uploadNote").value;
 
+  // ★今回：事前チェック結果も表示
+  const check = validateBeforeUpload(file);
+
   logLine("ドライラン: /v1/admin/upload-url に渡す想定", {
     contract_id: selectedContract.contract_id,
     kind,
     filename: file ? file.name : "(no file)",
     content_type: file ? (file.type || "application/octet-stream") : "(no file)",
+    size_bytes: file ? Number(file.size || 0) : 0,
     note,
+    precheck: check,
   });
 }
 
@@ -204,8 +246,16 @@ async function onUpload() {
   if (!selectedContract) return;
 
   const file = $("fileInput").files?.[0];
-  if (!file) {
-    logLine("アップロード失敗: ファイル未選択");
+
+  // ★今回：アップロード前に即チェックして止める
+  const pre = validateBeforeUpload(file);
+  if (!pre.ok) {
+    logLine("アップロード中止（事前チェックNG）", {
+      reason: pre.message,
+      filename: file?.name,
+      content_type: file?.type || "",
+      size_bytes: Number(file?.size || 0),
+    });
     return;
   }
 
@@ -213,7 +263,12 @@ async function onUpload() {
   const note = $("uploadNote").value;
 
   try {
-    logLine("署名付きURLを要求");
+    logLine("署名付きURLを要求", {
+      filename: file.name,
+      content_type: file.type || "application/octet-stream",
+      size_bytes: Number(file.size || 0),
+    });
+
     const { upload_url, object_key, upload_id } = await requestUploadUrl({
       contract_id: selectedContract.contract_id,
       kind,
@@ -280,7 +335,6 @@ function renderDialogues() {
     emptyEl.textContent = "（対話データがありません）";
     emptyEl.style.display = "block";
     setActivateEnabled(false);
-    // 有効がないのでQA作成も不可
     setBuildEnabled(false);
     return;
   }
@@ -316,14 +370,12 @@ function renderDialogues() {
       selectedDialogueKey = key;
       setActivateEnabled(true);
       logLine("対話データを選択", { object_key: key });
-      // 再描画してチェック状態と見た目を揃える
       renderDialogues();
     });
 
     listEl.appendChild(div);
   });
 
-  // QA作成ボタンは「有効がある」場合だけ
   setBuildEnabled(!!activeDialogueKey);
   $("activeDialogueLabel").textContent = activeDialogueKey ? `有効: ${activeDialogueKey}` : "有効: 未選択";
 }
@@ -342,14 +394,11 @@ async function loadDialogues() {
       { method: "GET" }
     );
 
-    // 想定：
-    // res.items / res.active_object_key
     const items = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
     dialogues = items;
 
     activeDialogueKey = res?.active_object_key || null;
 
-    // 選択中が無ければ、有効があれば有効を選択状態に寄せる
     if (!selectedDialogueKey && activeDialogueKey) {
       selectedDialogueKey = activeDialogueKey;
       setActivateEnabled(true);
@@ -362,7 +411,6 @@ async function loadDialogues() {
     renderDialogues();
 
   } catch (e) {
-    // 未実装の場合でも画面は崩さない
     dialogues = [];
     activeDialogueKey = null;
     selectedDialogueKey = null;
@@ -392,7 +440,6 @@ async function onActivateDialogue() {
 
     logLine("対話データ 有効化完了", res);
 
-    // 有効化後に再読込
     await loadDialogues();
 
   } catch (e) {
