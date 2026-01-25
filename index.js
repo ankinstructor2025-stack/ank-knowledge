@@ -92,4 +92,4 @@ btnSearch.onclick = () => goto("./qa_search.html");
 btnContracts && (btnContracts.onclick = () => goto("./contracts.html"));
 btnMembers && (btnMembers.onclick = () => goto("./admin_members.html"));
 btnKnowledge && (btnKnowledge.onclick = () => goto("./admin_knowledge.html"));
-btnAdminSearch && (btnAdminSearch.onclick = () => goto("./qa_search.html"));
+btnAdminSearch && (btnAdminSearch.onclick = () => goto("./qa_maintenance.html"));
