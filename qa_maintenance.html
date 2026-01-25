@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QAメンテ（契約選択 / 対話アップロード）</title>
+  <title>QAメンテ（契約選択 / 対話データ / QA作成）</title>
   <style>
     :root { --border:#e5e7eb; --muted:#6b7280; --bg:#f9fafb; }
     body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; background: #fff; }
@@ -28,7 +28,7 @@
       width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border);
       border-radius:10px; background:#fff; font-size:14px;
     }
-    textarea { min-height: 140px; resize: vertical; }
+    textarea { min-height: 120px; resize: vertical; }
     button {
       padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#111827;
       color:#fff; cursor:pointer; font-weight:600;
@@ -38,7 +38,17 @@
     .hr { height:1px; background:var(--border); margin:12px 0; }
     .log { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
            font-size:12px; background:#0b1020; color:#e5e7eb; padding:10px; border-radius:10px; overflow:auto; }
+
     .warn { color:#b45309; font-size:12px; }
+
+    /* 対話データ一覧 */
+    .list { display:flex; flex-direction:column; gap:8px; }
+    .item { border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; }
+    .item.active { border-color:#111827; box-shadow:0 0 0 1px #111827 inset; }
+    .item-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .radio { display:flex; align-items:center; gap:8px; }
+    .small { font-size:12px; color:var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
   </style>
 </head>
 <body>
@@ -54,9 +64,7 @@
         <div class="spacer"></div>
         <div id="contracts" class="contract-list"></div>
         <div class="spacer"></div>
-        <div class="muted">
-          role=admin の active 契約を表示する想定
-        </div>
+        <div class="muted">role=admin かつ active の契約のみ表示</div>
       </div>
     </aside>
 
@@ -64,7 +72,7 @@
     <main class="right">
       <div class="panel">
         <p class="h">QAメンテ</p>
-        <div class="muted">左の契約を選ぶと、右側のアップロード機能が有効になる想定</div>
+        <div class="muted">左の契約を選ぶと、右側の操作が有効になる想定</div>
 
         <div class="hr"></div>
 
@@ -76,16 +84,21 @@
               <span id="selectedContractId" class="muted"></span>
             </div>
           </div>
-          <div class="warn" id="notSelectedMsg">契約を選ぶとアップロードが有効になります</div>
+          <div class="warn" id="notSelectedMsg">契約を選ぶと操作が有効になります</div>
         </div>
 
+        <!-- ① 対話データアップロード -->
         <div class="hr"></div>
+        <p class="h" style="margin-top:0;">対話データを追加</p>
+        <div class="muted">アップロード後、下の一覧から「有効な対話データ」を1つ選択します</div>
+
+        <div class="spacer"></div>
 
         <div class="grid">
           <div>
             <div class="muted">アップロード種別</div>
             <select id="uploadKind" disabled>
-              <option value="dialogue">対話ログ</option>
+              <option value="dialogue">対話データ</option>
               <option value="qa_csv">QA CSV</option>
               <option value="other">その他</option>
             </select>
@@ -101,9 +114,7 @@
         <div>
           <div class="muted">ファイル</div>
           <input id="fileInput" type="file" disabled />
-          <div class="muted" style="margin-top:6px;">
-            例：.txt / .json / .csv（制約はAPI側で決める）
-          </div>
+          <div class="muted" style="margin-top:6px;">例：.txt / .json / .csv（制約はAPI側で決める）</div>
         </div>
 
         <div class="spacer"></div>
@@ -111,9 +122,38 @@
         <div class="row" style="gap:10px;">
           <button id="uploadBtn" type="button" disabled>アップロード</button>
           <button id="dryRunBtn" class="secondary" type="button" disabled>ドライラン（API呼び出し内容を表示）</button>
+          <div style="flex:1;"></div>
+          <button id="reloadDialoguesBtn" class="secondary" type="button" disabled>対話データ一覧 再読込</button>
         </div>
 
+        <!-- ② 対話データ一覧（有効を1つ選ぶ） -->
+        <div class="hr"></div>
+        <p class="h" style="margin-top:0;">対話データ一覧</p>
+        <div class="muted">契約で有効にする対話データを1つ選択します</div>
+
         <div class="spacer"></div>
+        <div id="dialoguesEmpty" class="muted">（対話データがありません）</div>
+        <div id="dialogues" class="list"></div>
+
+        <div class="spacer"></div>
+
+        <div class="row">
+          <button id="activateDialogueBtn" type="button" disabled>選択した対話データを有効にする</button>
+          <span id="activeDialogueLabel" class="muted"></span>
+        </div>
+
+        <!-- ③ QA作成 -->
+        <div class="hr"></div>
+        <p class="h" style="margin-top:0;">QA作成</p>
+        <div class="muted">有効な対話データに対してQA作成を開始します</div>
+
+        <div class="spacer"></div>
+        <div class="row">
+          <button id="buildQaBtn" type="button" disabled>QA作成</button>
+          <span class="muted">※ 進捗は後で追加（まずは開始できればOK）</span>
+        </div>
+
+        <div class="hr"></div>
         <div class="muted">ログ</div>
         <pre id="log" class="log"></pre>
       </div>
