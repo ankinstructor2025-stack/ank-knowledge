@@ -1,6 +1,8 @@
-// qa_maintenance.js
-// - 左：契約一覧（admin / active）
+// qa_maintenance.js（完全版）
+// - 左：契約一覧（/v1/contracts の結果をそのまま受け、admin + active だけ表示）
 // - 右：対話情報アップロード（機能だけ：署名付きURL方式想定）
+// - 認証：ank_firebase.js の requireUser() でログイン必須
+// - API：ank_api.js の apiFetch(currentUser, path, ...) を使用
 //
 // 前提：同じフォルダにこの2ファイルがある
 //   ./ank_firebase.js
@@ -31,7 +33,7 @@ function logLine(msg, obj = null) {
     ? `${now} ${msg}\n${JSON.stringify(obj, null, 2)}\n`
     : `${now} ${msg}\n`;
   // 新しいログを先頭に積む（上限は適当に）
-  el.textContent = (line + "\n" + el.textContent).slice(0, 16000);
+  el.textContent = (line + "\n" + el.textContent).slice(0, 20000);
 }
 
 function setUploadEnabled(enabled) {
@@ -50,23 +52,54 @@ let currentUser = null;
 let selectedContract = null;
 
 // ----------------------------
-// 契約一覧
+// 契約一覧（/v1/contracts の仕様に完全追従）
 // ----------------------------
+//
+// main.py の /v1/contracts は、こういう形の配列を返す：
+// [
+//   {
+//     contract_id,
+//     role,
+//     user_contract_status,   // 'active' 等
+//     contract_status,        // 'active' 等
+//     start_at,
+//     seat_limit,
+//     knowledge_count,
+//     monthly_amount_yen,
+//     note,
+//     payment_method_configured,
+//     created_at,
+//     current_period_end: null
+//   }, ...
+// ]
+//
 
 function normalizeContractsPayload(payload) {
-  // 返却形を吸収する
-  // - 配列そのまま
-  // - { contracts: [...] }
-  // - { rows: [...] } など、将来の揺れも最低限吸収
+  // 仕様上は配列だが、念のための保険
   if (Array.isArray(payload)) return payload;
   if (payload && Array.isArray(payload.contracts)) return payload.contracts;
   if (payload && Array.isArray(payload.rows)) return payload.rows;
   return [];
 }
 
-function isActiveContract(c) {
-  // active の表現ゆれ吸収
-  return c?.active === true || c?.active === 1 || c?.active === "true" || c?.active === "1";
+function isAdminActiveContract(c) {
+  // 管理画面の左ペインに出す条件
+  // - role が admin
+  // - user_contract_status が active
+  // - contract_status が active
+  return (
+    (c?.role || "") === "admin" &&
+    (c?.user_contract_status || "") === "active" &&
+    (c?.contract_status || "") === "active"
+  );
+}
+
+function contractDisplayName(c) {
+  // 左に出す表示名。今のAPI仕様では name が無いので note を使う（なければID）
+  // ※ここは後で contracts テーブルに display_name を追加したら差し替え
+  const note = (c?.note || "").trim();
+  if (note) return note;
+  return c?.contract_id || "(no contract_id)";
 }
 
 function renderContracts(contracts) {
@@ -78,15 +111,15 @@ function renderContracts(contracts) {
     div.className = "contract-item";
     div.dataset.contractId = c.contract_id;
 
-    const name = c.name || c.contract_name || c.contract_id;
-    const active = isActiveContract(c);
+    const name = contractDisplayName(c);
 
     div.innerHTML = `
       <div class="row" style="justify-content:space-between;">
         <div style="font-weight:700;">${escapeHtml(name)}</div>
-        <span class="badge">${active ? "active" : "inactive"}</span>
+        <span class="badge">admin</span>
       </div>
       <div class="muted">contract_id: ${escapeHtml(c.contract_id)}</div>
+      <div class="muted">月額: ${escapeHtml(String(c.monthly_amount_yen ?? ""))}円 / seats: ${escapeHtml(String(c.seat_limit ?? ""))}</div>
     `;
 
     div.addEventListener("click", () => {
@@ -101,7 +134,13 @@ function renderContracts(contracts) {
       $("selectedContractId").textContent = c.contract_id || "";
       setUploadEnabled(true);
 
-      logLine("契約を選択", { contract_id: c.contract_id, name });
+      logLine("契約を選択", {
+        contract_id: c.contract_id,
+        display: name,
+        role: c.role,
+        user_contract_status: c.user_contract_status,
+        contract_status: c.contract_status,
+      });
     });
 
     root.appendChild(div);
@@ -113,17 +152,19 @@ function renderContracts(contracts) {
 async function loadContracts() {
   logLine("契約一覧 取得開始");
   try {
-    // あなたの既存APIに合わせる：
-    // - 例：GET /v1/contracts?active=true
-    const payload = await apiFetch(currentUser, "/v1/contracts?active=true", {
-      method: "GET",
-    });
+    // 仕様どおり：/v1/contracts（クエリなし）
+    const payload = await apiFetch(currentUser, "/v1/contracts", { method: "GET" });
 
     const list = normalizeContractsPayload(payload);
-    const activeOnly = list.filter(isActiveContract);
 
-    renderContracts(activeOnly);
-    logLine("契約一覧 取得完了", { count: activeOnly.length });
+    // デバッグしやすいよう raw 件数だけは残す
+    logLine("契約一覧 raw 件数", { raw_count: list.length });
+
+    // 左ペインは「admin かつ active だけ」
+    const adminActive = list.filter(isAdminActiveContract);
+
+    renderContracts(adminActive);
+    logLine("契約一覧 表示完了（admin+active）", { count: adminActive.length });
   } catch (e) {
     renderContracts([]);
     logLine("契約一覧 取得失敗", { error: String(e) });
@@ -133,11 +174,19 @@ async function loadContracts() {
 // ----------------------------
 // アップロード（署名付きURL方式想定）
 // ----------------------------
-
-// 想定API
+//
+// 想定API（まだ未実装でOK）
 // POST /v1/admin/upload-url
 // body: { contract_id, kind, filename, content_type, note }
 // res: { upload_url, object_key }
+//
+// PUT upload_url に file を送る（ブラウザ→GCS）
+//
+// 任意：完了通知
+// POST /v1/admin/upload-finalize
+// body: { contract_id, object_key }
+//
+
 async function requestUploadUrl({ contract_id, kind, file, note }) {
   const body = {
     contract_id,
@@ -153,7 +202,6 @@ async function requestUploadUrl({ contract_id, kind, file, note }) {
   });
 }
 
-// ブラウザ → GCS PUT（upload_url へ）
 async function uploadToSignedUrl(uploadUrl, file) {
   const res = await fetch(uploadUrl, {
     method: "PUT",
@@ -169,11 +217,7 @@ async function uploadToSignedUrl(uploadUrl, file) {
   }
 }
 
-// 任意：完了通知（DB記録など）
 async function finalizeUpload({ contract_id, object_key }) {
-  // 想定API
-  // POST /v1/admin/upload-finalize
-  // body: { contract_id, object_key }
   return await apiFetch(currentUser, "/v1/admin/upload-finalize", {
     method: "POST",
     body: { contract_id, object_key },
