@@ -1,9 +1,9 @@
-// qa_maintenance.js（100MB / テキスト以外を即エラーで止める版）
+// qa_maintenance.js（完全版：100MB / テキスト以外を画面内の赤文字で通知）
 //
 // - 左：契約一覧（/v1/contracts の結果から admin+active のみ表示）
 // - 右：
 //    ① 対話データアップロード（署名付きURL方式）
-//       ★アップロード前に「テキスト以外」「100MB以上」をエラーにする
+//       ★アップロード前に「テキスト以外」「100MB以上」をチェックし、fileErrorに赤文字表示
 //    ② 対話データ一覧（upload_logs kind='dialogue'）から 1つ有効化
 //    ③ 有効な対話データに対して QA作成ボタン
 //
@@ -43,20 +43,33 @@ function setMainEnabled(enabled) {
 }
 
 // 「有効化」「QA作成」ボタンは、別の条件で制御
-function setActivateEnabled(enabled) {
-  $("activateDialogueBtn").disabled = !enabled;
+function setActivateEnabled(enabled) { $("activateDialogueBtn").disabled = !enabled; }
+function setBuildEnabled(enabled) { $("buildQaBtn").disabled = !enabled; }
+
+// ----------------------------
+// ★追加：画面内（ファイル欄付近）エラー表示
+// ----------------------------
+function showFileError(message) {
+  const el = $("fileError");
+  if (!el) return;
+  el.textContent = String(message || "");
+  el.style.display = "block";
 }
-function setBuildEnabled(enabled) {
-  $("buildQaBtn").disabled = !enabled;
+
+function clearFileError() {
+  const el = $("fileError");
+  if (!el) return;
+  el.textContent = "";
+  el.style.display = "none";
 }
 
 // ----------------------------
-// ここが今回の追加：アップロード前チェック
+// ★追加：アップロード前チェック（100MB / テキスト以外）
 // ----------------------------
 const MAX_BYTES = 100 * 1024 * 1024; // 100MB
 
 function isTextFile(file) {
-  // 1) MIME が取れるなら text/* を許可（ブラウザによって空のことがある）
+  // 1) MIME が取れるなら text/* を許可（空の場合がある）
   const ct = (file?.type || "").toLowerCase();
   if (ct.startsWith("text/")) return true;
 
@@ -69,13 +82,11 @@ function isTextFile(file) {
 function validateBeforeUpload(file) {
   if (!file) return { ok: false, message: "ファイルが選択されていません" };
 
-  // サイズ
   const size = Number(file.size || 0);
   if (size > MAX_BYTES) {
     return { ok: false, message: "100MB以上のファイルは非対応です" };
   }
 
-  // テキスト判定（MIME or 拡張子）
   if (!isTextFile(file)) {
     return { ok: false, message: "テキスト以外のファイルは非対応です（.txt/.json/.csv など）" };
   }
@@ -150,6 +161,9 @@ function renderContracts(contracts) {
       // 右側を有効化
       setMainEnabled(true);
 
+      // ファイル欄のエラーはリセット
+      clearFileError();
+
       // 対話データ状態はリセット
       dialogues = [];
       selectedDialogueKey = null;
@@ -188,9 +202,8 @@ async function loadContracts() {
 // ----------------------------
 // ① 対話データアップロード（署名URL方式）
 // ----------------------------
-
 async function requestUploadUrl({ contract_id, kind, file, note }) {
-  // ★今回：size_bytes を送る（サーバ側でも同じチェックを入れられる）
+  // サーバ側でも同じチェックを入れられるよう、size_bytes を送る
   const body = {
     contract_id,
     kind,
@@ -228,8 +241,7 @@ async function onDryRun() {
   const kind = $("uploadKind").value;
   const note = $("uploadNote").value;
 
-  // ★今回：事前チェック結果も表示
-  const check = validateBeforeUpload(file);
+  const precheck = validateBeforeUpload(file);
 
   logLine("ドライラン: /v1/admin/upload-url に渡す想定", {
     contract_id: selectedContract.contract_id,
@@ -238,8 +250,12 @@ async function onDryRun() {
     content_type: file ? (file.type || "application/octet-stream") : "(no file)",
     size_bytes: file ? Number(file.size || 0) : 0,
     note,
-    precheck: check,
+    precheck,
   });
+
+  // ドライラン時も「NGなら赤文字」を出す（利用者が気付きやすい）
+  if (!precheck.ok) showFileError(precheck.message);
+  else clearFileError();
 }
 
 async function onUpload() {
@@ -247,9 +263,10 @@ async function onUpload() {
 
   const file = $("fileInput").files?.[0];
 
-  // ★今回：アップロード前に即チェックして止める
+  // ★アップロード前に即チェックして、画面内に赤文字表示して止める
   const pre = validateBeforeUpload(file);
   if (!pre.ok) {
+    showFileError(pre.message);
     logLine("アップロード中止（事前チェックNG）", {
       reason: pre.message,
       filename: file?.name,
@@ -258,6 +275,9 @@ async function onUpload() {
     });
     return;
   }
+
+  // OKならエラー表示を消す
+  clearFileError();
 
   const kind = $("uploadKind").value;  // dialogue
   const note = $("uploadNote").value;
@@ -299,6 +319,8 @@ async function onUpload() {
     await loadDialogues();
 
   } catch (e) {
+    // ここはAPI側のエラーも見えるように、赤文字にも出す
+    showFileError(String(e));
     logLine("アップロード失敗", { error: String(e) });
   }
 }
@@ -310,13 +332,12 @@ async function onUpload() {
 // 想定API（未実装でもUIは動く）
 // GET /v1/admin/dialogues?contract_id=...
 // -> {
-//      active_object_key: "tenants/.../....txt" | null,
+//      active_object_key: "contracts/.../....txt" | null,
 //      items: [
 //        { upload_id, object_key, created_at, kind, month_key, original_filename? }
 //      ]
 //    }
 //
-
 function renderDialogues() {
   const listEl = $("dialogues");
   const emptyEl = $("dialoguesEmpty");
@@ -407,7 +428,6 @@ async function loadDialogues() {
     }
 
     logLine("対話データ一覧 取得完了", { count: dialogues.length, active: activeDialogueKey });
-
     renderDialogues();
 
   } catch (e) {
@@ -439,7 +459,6 @@ async function onActivateDialogue() {
     });
 
     logLine("対話データ 有効化完了", res);
-
     await loadDialogues();
 
   } catch (e) {
@@ -489,10 +508,16 @@ async function init() {
   $("activateDialogueBtn").addEventListener("click", onActivateDialogue);
   $("buildQaBtn").addEventListener("click", onBuildQa);
 
+  // ★追加：ファイル選び直しで赤文字を消す（利用者が気付きやすい）
+  $("fileInput").addEventListener("change", () => {
+    clearFileError();
+  });
+
   // 初期状態
   $("selectedContractName").textContent = "未選択";
   $("selectedContractId").textContent = "";
   $("activeDialogueLabel").textContent = "";
+  clearFileError();
   setMainEnabled(false);
   setActivateEnabled(false);
   setBuildEnabled(false);
