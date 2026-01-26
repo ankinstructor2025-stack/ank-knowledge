@@ -54,12 +54,12 @@ function clearFileError() {
   if (!el) return;
   el.textContent = "";
   el.style.display = "none";
+}
+
 function setJudgeLabel(text) {
   const el = $("judgeMethodLabel");
   if (!el) return;
   el.textContent = text || "";
-}
-
 }
 
 // ----------------------------
