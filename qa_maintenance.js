@@ -262,7 +262,7 @@ async function uploadToSignedUrl(uploadUrl, file) {
 }
 
 async function finalizeUpload({ contract_id, object_key, upload_id }) {
-  return await apiFetchToBase(currentUser, KNOWLEDGE_API_BASE, "/v1/admin/upload-finalize", {
+  return await apiFetch(currentUser, "/v1/admin/upload-finalize", {
     method: "POST",
     body: { contract_id, object_key, upload_id },
   });
