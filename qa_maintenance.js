@@ -89,7 +89,7 @@ function validateBeforeUpload(file) {
     return { ok: false, message: "ファイルサイズが大きすぎます（上限は100MBです）" };
   }
   if (!isTextFile(file)) {
-    return { ok: false, message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv など）" };
+    return { ok: false, message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv）" };
   }
   return { ok: true };
 }
