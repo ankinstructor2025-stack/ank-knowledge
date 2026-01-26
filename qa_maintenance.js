@@ -91,7 +91,7 @@ function validateBeforeUpload(file) {
 // ★追加：ank-knowledge-api にだけ飛ばすための BASE
 // ここをあなたの Cloud Run URL に合わせて設定する
 // ----------------------------
-const KNOWLEDGE_API_BASE = "https://YOUR_ANK_KNOWLEDGE_API_DOMAIN";
+const KNOWLEDGE_API_BASE = "https://ank-knowledge-api-986862757498.asia-northeast1.run.app";
 
 // Bearer token 付きで任意BASEへPOST/GETする（echo専用に使う）
 async function apiFetchToBase(user, baseUrl, path, { method = "GET", body = null } = {}) {
