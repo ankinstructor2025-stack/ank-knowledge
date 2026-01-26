@@ -73,7 +73,7 @@ function isTextFile(file) {
   if (ct.startsWith("text/")) return true;
 
   const name = (file?.name || "").toLowerCase();
-  const okExt = [".txt", ".json", ".csv", ".md", ".log"];
+  const okExt = [".txt", ".json", ".csv"];
   return okExt.some((ext) => name.endsWith(ext));
 }
 
