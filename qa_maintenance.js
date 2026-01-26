@@ -1,15 +1,8 @@
-// qa_maintenance.js（完全版：100MB / テキスト以外を画面内の赤文字で通知）
+// qa_maintenance.js（完全版：サイズチェックOKなら "Hi" を ank-knowledge-api /v1/echo に送って戻りを表示）
 //
-// - 左：契約一覧（/v1/contracts の結果から admin+active のみ表示）
-// - 右：
-//    ① 対話データアップロード（署名付きURL方式）
-//       ★アップロード前に「テキスト以外」「100MB以上」をチェックし、fileErrorに赤文字表示
-//    ② 対話データ一覧（upload_logs kind='dialogue'）から 1つ有効化
-//    ③ 有効な対話データに対して QA作成ボタン
-//
-// 前提：同じフォルダに
-//   ./ank_firebase.js
-//   ./ank_api.js
+// 注意：
+// - 既存の apiFetch() は admin系API（/v1/contracts, /v1/admin/*）を叩く前提
+// - echo は ank-knowledge-api に行かせたいので、別BASEで叩く関数をこのファイル内に用意する
 
 import { initFirebase, requireUser } from "./ank_firebase.js";
 import { apiFetch } from "./ank_api.js";
@@ -38,16 +31,16 @@ function setMainEnabled(enabled) {
   $("fileInput").disabled = !enabled;
   $("uploadBtn").disabled = !enabled;
   $("dryRunBtn").disabled = !enabled;
+  $("echoTestBtn").disabled = !enabled; // ★追加
   $("reloadDialoguesBtn").disabled = !enabled;
   $("notSelectedMsg").style.visibility = enabled ? "hidden" : "visible";
 }
 
-// 「有効化」「QA作成」ボタンは、別の条件で制御
 function setActivateEnabled(enabled) { $("activateDialogueBtn").disabled = !enabled; }
 function setBuildEnabled(enabled) { $("buildQaBtn").disabled = !enabled; }
 
 // ----------------------------
-// ★追加：画面内（ファイル欄付近）エラー表示
+// 画面内（ファイル欄付近）エラー表示
 // ----------------------------
 function showFileError(message) {
   const el = $("fileError");
@@ -55,7 +48,6 @@ function showFileError(message) {
   el.textContent = String(message || "");
   el.style.display = "block";
 }
-
 function clearFileError() {
   const el = $("fileError");
   if (!el) return;
@@ -64,57 +56,71 @@ function clearFileError() {
 }
 
 // ----------------------------
-// ★追加：アップロード前チェック（100MB / テキスト以外）
+// アップロード前チェック（1KB〜100MB / テキスト）
 // ----------------------------
 const MIN_BYTES = 1024;              // 1KB
 const MAX_BYTES = 100 * 1024 * 1024; // 100MB
 
 function isTextFile(file) {
-  // 1) MIME が取れるなら text/* を許可（空の場合がある）
   const ct = (file?.type || "").toLowerCase();
   if (ct.startsWith("text/")) return true;
 
-  // 2) 拡張子で許可（最低限）
   const name = (file?.name || "").toLowerCase();
   const okExt = [".txt", ".json", ".csv", ".md", ".log"];
   return okExt.some((ext) => name.endsWith(ext));
 }
 
 function validateBeforeUpload(file) {
-  if (!file) {
-    return {
-      ok: false,
-      message: "ファイルが選択されていません",
-    };
-  }
+  if (!file) return { ok: false, message: "ファイルが選択されていません" };
 
   const size = Number(file.size || 0);
 
-  // ★ 1KB 未満
   if (size < MIN_BYTES) {
-    return {
-      ok: false,
-      message: "ファイルサイズが小さすぎます（1KB以上のテキストが必要です）",
-    };
+    return { ok: false, message: "ファイルサイズが小さすぎます（1KB以上のテキストが必要です）" };
   }
-
-  // ★ 100MB 超
   if (size > MAX_BYTES) {
-    return {
-      ok: false,
-      message: "ファイルサイズが大きすぎます（上限は100MBです）",
-    };
+    return { ok: false, message: "ファイルサイズが大きすぎます（上限は100MBです）" };
   }
-
-  // ★ テキスト以外
   if (!isTextFile(file)) {
-    return {
-      ok: false,
-      message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv など）",
-    };
+    return { ok: false, message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv など）" };
+  }
+  return { ok: true };
+}
+
+// ----------------------------
+// ★追加：ank-knowledge-api にだけ飛ばすための BASE
+// ここをあなたの Cloud Run URL に合わせて設定する
+// ----------------------------
+const KNOWLEDGE_API_BASE = "https://YOUR_ANK_KNOWLEDGE_API_DOMAIN";
+
+// Bearer token 付きで任意BASEへPOST/GETする（echo専用に使う）
+async function apiFetchToBase(user, baseUrl, path, { method = "GET", body = null } = {}) {
+  if (!user) throw new Error("not signed in");
+
+  const token = await user.getIdToken(true);
+
+  const headers = {
+    "Authorization": `Bearer ${token}`,
+  };
+  if (body) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : null,
+  });
+
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}: ${text}`);
   }
 
-  return { ok: true };
+  // echoはjson想定
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
 }
 
 // ----------------------------
@@ -123,10 +129,9 @@ function validateBeforeUpload(file) {
 let currentUser = null;
 let selectedContract = null;
 
-// 対話データ一覧
-let dialogues = [];              // [{upload_id, object_key, created_at, ...}]
-let selectedDialogueKey = null;  // object_key
-let activeDialogueKey = null;    // object_key（現在有効）
+let dialogues = [];
+let selectedDialogueKey = null;
+let activeDialogueKey = null;
 
 // ----------------------------
 // 契約一覧（/v1/contracts 仕様）
@@ -181,13 +186,9 @@ function renderContracts(contracts) {
       $("selectedContractName").textContent = name;
       $("selectedContractId").textContent = c.contract_id || "";
 
-      // 右側を有効化
       setMainEnabled(true);
-
-      // ファイル欄のエラーはリセット
       clearFileError();
 
-      // 対話データ状態はリセット
       dialogues = [];
       selectedDialogueKey = null;
       activeDialogueKey = null;
@@ -198,7 +199,6 @@ function renderContracts(contracts) {
 
       logLine("契約を選択", { contract_id: c.contract_id, display: name });
 
-      // 契約を選んだら一覧を読み込む
       await loadDialogues();
     });
 
@@ -226,7 +226,6 @@ async function loadContracts() {
 // ① 対話データアップロード（署名URL方式）
 // ----------------------------
 async function requestUploadUrl({ contract_id, kind, file, note }) {
-  // サーバ側でも同じチェックを入れられるよう、size_bytes を送る
   const body = {
     contract_id,
     kind,
@@ -276,7 +275,6 @@ async function onDryRun() {
     precheck,
   });
 
-  // ドライラン時も「NGなら赤文字」を出す（利用者が気付きやすい）
   if (!precheck.ok) showFileError(precheck.message);
   else clearFileError();
 }
@@ -286,7 +284,6 @@ async function onUpload() {
 
   const file = $("fileInput").files?.[0];
 
-  // ★アップロード前に即チェックして、画面内に赤文字表示して止める
   const pre = validateBeforeUpload(file);
   if (!pre.ok) {
     showFileError(pre.message);
@@ -299,10 +296,9 @@ async function onUpload() {
     return;
   }
 
-  // OKならエラー表示を消す
   clearFileError();
 
-  const kind = $("uploadKind").value;  // dialogue
+  const kind = $("uploadKind").value;
   const note = $("uploadNote").value;
 
   try {
@@ -338,29 +334,57 @@ async function onUpload() {
       logLine("アップロード確定は未実装でも進行可", { error: String(e) });
     }
 
-    // アップロード後に一覧を再読込
     await loadDialogues();
 
   } catch (e) {
-    // ここはAPI側のエラーも見えるように、赤文字にも出す
     showFileError(String(e));
     logLine("アップロード失敗", { error: String(e) });
   }
 }
 
 // ----------------------------
-// ② 対話データ一覧（upload_logs kind='dialogue'）
+// ★追加：OpenAI echo テスト（ファイルチェックOKなら "Hi" を送る）
 // ----------------------------
-//
-// 想定API（未実装でもUIは動く）
-// GET /v1/admin/dialogues?contract_id=...
-// -> {
-//      active_object_key: "contracts/.../....txt" | null,
-//      items: [
-//        { upload_id, object_key, created_at, kind, month_key, original_filename? }
-//      ]
-//    }
-//
+async function onEchoTest() {
+  if (!selectedContract) return;
+
+  const file = $("fileInput").files?.[0];
+  const pre = validateBeforeUpload(file);
+  if (!pre.ok) {
+    showFileError(pre.message);
+    logLine("OpenAI Echoテスト中止（事前チェックNG）", {
+      reason: pre.message,
+      filename: file?.name,
+      content_type: file?.type || "",
+      size_bytes: Number(file?.size || 0),
+    });
+    return;
+  }
+
+  clearFileError();
+
+  // ここで入力は不要。常にHi。
+  const message = "Hi";
+
+  try {
+    logLine("OpenAI Echoテスト 開始（ank-knowledge-api）", { message });
+
+    const res = await apiFetchToBase(currentUser, KNOWLEDGE_API_BASE, "/v1/echo", {
+      method: "POST",
+      body: { message },
+    });
+
+    logLine("OpenAI Echoテスト 成功", res);
+
+  } catch (e) {
+    showFileError(String(e));
+    logLine("OpenAI Echoテスト 失敗", { error: String(e) });
+  }
+}
+
+// ----------------------------
+// ② 対話データ一覧
+// ----------------------------
 function renderDialogues() {
   const listEl = $("dialogues");
   const emptyEl = $("dialoguesEmpty");
@@ -465,7 +489,6 @@ async function loadDialogues() {
   }
 }
 
-// 有効化
 async function onActivateDialogue() {
   if (!selectedContract) return;
   if (!selectedDialogueKey) return;
@@ -492,10 +515,6 @@ async function onActivateDialogue() {
 // ----------------------------
 // ③ QA作成
 // ----------------------------
-//
-// 想定：POST /v1/admin/dialogues/build-qa { contract_id }
-// API側で contracts.active_dialogue_object_key を見て開始
-//
 async function onBuildQa() {
   if (!selectedContract) return;
   if (!activeDialogueKey) {
@@ -527,16 +546,15 @@ async function init() {
   $("reloadContractsBtn").addEventListener("click", loadContracts);
   $("uploadBtn").addEventListener("click", onUpload);
   $("dryRunBtn").addEventListener("click", onDryRun);
+  $("echoTestBtn").addEventListener("click", onEchoTest); // ★追加
   $("reloadDialoguesBtn").addEventListener("click", loadDialogues);
   $("activateDialogueBtn").addEventListener("click", onActivateDialogue);
   $("buildQaBtn").addEventListener("click", onBuildQa);
 
-  // ★追加：ファイル選び直しで赤文字を消す（利用者が気付きやすい）
   $("fileInput").addEventListener("change", () => {
     clearFileError();
   });
 
-  // 初期状態
   $("selectedContractName").textContent = "未選択";
   $("selectedContractId").textContent = "";
   $("activeDialogueLabel").textContent = "";
