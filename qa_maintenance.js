@@ -32,6 +32,7 @@ function setMainEnabled(enabled) {
   $("uploadBtn").disabled = !enabled;
   $("dryRunBtn").disabled = !enabled;
   $("echoTestBtn").disabled = !enabled; // ★追加
+  $("judgeMethodBtn").disabled = !enabled; // ★追加
   $("reloadDialoguesBtn").disabled = !enabled;
   $("notSelectedMsg").style.visibility = enabled ? "hidden" : "visible";
 }
@@ -53,6 +54,12 @@ function clearFileError() {
   if (!el) return;
   el.textContent = "";
   el.style.display = "none";
+function setJudgeLabel(text) {
+  const el = $("judgeMethodLabel");
+  if (!el) return;
+  el.textContent = text || "";
+}
+
 }
 
 // ----------------------------
@@ -133,6 +140,9 @@ let dialogues = [];
 let selectedDialogueKey = null;
 let activeDialogueKey = null;
 
+// 方式判定結果（最後の判定）
+let lastJudge = null; // {can_extract_qa, method, confidence, reasons, stats}
+
 // ----------------------------
 // 契約一覧（/v1/contracts 仕様）
 // ----------------------------
@@ -188,6 +198,8 @@ function renderContracts(contracts) {
 
       setMainEnabled(true);
       clearFileError();
+      setJudgeLabel("");
+      lastJudge = null;
 
       dialogues = [];
       selectedDialogueKey = null;
@@ -382,6 +394,61 @@ async function onEchoTest() {
   }
 }
 
+
+// ----------------------------
+// ★追加：方式判定（/v1/admin/dialogues/judge-method）
+// - selectedDialogueKey があればそれを優先、なければ activeDialogueKey
+// - contract_id は必須
+// ----------------------------
+async function onJudgeMethod() {
+  if (!selectedContract) return;
+
+  const file = $("fileInput").files?.[0];
+  const pre = validateBeforeUpload(file);
+  if (!pre.ok) {
+    showFileError(pre.message);
+    logLine("方式判定 中止（事前チェックNG）", {
+      reason: pre.message,
+      filename: file?.name,
+      content_type: file?.type || "",
+      size_bytes: Number(file?.size || 0),
+    });
+    return;
+  }
+
+  clearFileError();
+
+  const contract_id = selectedContract.contract_id;
+  const object_key = selectedDialogueKey || activeDialogueKey || null;
+
+  try {
+    logLine("方式判定 開始", { contract_id, object_key });
+
+    const body = object_key ? { contract_id, object_key } : { contract_id };
+    const res = await apiFetch(currentUser, "/v1/admin/dialogues/judge-method", {
+      method: "POST",
+      body,
+    });
+
+    lastJudge = res;
+    const method = res?.method ? String(res.method) : "-";
+    const conf = (typeof res?.confidence === "number") ? res.confidence.toFixed(2) : "";
+    const ok = !!res?.can_extract_qa;
+
+    setJudgeLabel(ok ? `判定: ${method}（conf ${conf}）` : "判定: QA抽出不可");
+    logLine("方式判定 完了", res);
+
+    if (!ok) {
+      const reasons = Array.isArray(res?.reasons) ? res.reasons.join(" / ") : "";
+      showFileError(reasons ? `QA抽出できません: ${reasons}` : "QA抽出できません");
+    }
+  } catch (e) {
+    setJudgeLabel("判定: 失敗");
+    showFileError(String(e));
+    logLine("方式判定 失敗", { error: String(e) });
+  }
+}
+
 // ----------------------------
 // ② 対話データ一覧
 // ----------------------------
@@ -475,6 +542,8 @@ async function loadDialogues() {
     }
 
     logLine("対話データ一覧 取得完了", { count: dialogues.length, active: activeDialogueKey });
+    setJudgeLabel("");
+    lastJudge = null;
     renderDialogues();
 
   } catch (e) {
@@ -547,6 +616,7 @@ async function init() {
   $("uploadBtn").addEventListener("click", onUpload);
   $("dryRunBtn").addEventListener("click", onDryRun);
   $("echoTestBtn").addEventListener("click", onEchoTest); // ★追加
+  $("judgeMethodBtn").addEventListener("click", onJudgeMethod); // ★追加
   $("reloadDialoguesBtn").addEventListener("click", loadDialogues);
   $("activateDialogueBtn").addEventListener("click", onActivateDialogue);
   $("buildQaBtn").addEventListener("click", onBuildQa);
@@ -558,6 +628,7 @@ async function init() {
   $("selectedContractName").textContent = "未選択";
   $("selectedContractId").textContent = "";
   $("activeDialogueLabel").textContent = "";
+  setJudgeLabel("");
   clearFileError();
   setMainEnabled(false);
   setActivateEnabled(false);
