@@ -66,6 +66,7 @@ function clearFileError() {
 // ----------------------------
 // ★追加：アップロード前チェック（100MB / テキスト以外）
 // ----------------------------
+const MIN_BYTES = 1024;              // 1KB
 const MAX_BYTES = 100 * 1024 * 1024; // 100MB
 
 function isTextFile(file) {
@@ -80,18 +81,40 @@ function isTextFile(file) {
 }
 
 function validateBeforeUpload(file) {
-  if (!file) return { ok: false, message: "ファイルが選択されていません" };
+  if (!file) {
+    return {
+      ok: false,
+      message: "ファイルが選択されていません",
+    };
+  }
 
   const size = Number(file.size || 0);
+
+  // ★ 1KB 未満
+  if (size < MIN_BYTES) {
+    return {
+      ok: false,
+      message: "ファイルサイズが小さすぎます（1KB以上のテキストが必要です）",
+    };
+  }
+
+  // ★ 100MB 超
   if (size > MAX_BYTES) {
-    return { ok: false, message: "100MB以上のファイルは非対応です" };
+    return {
+      ok: false,
+      message: "ファイルサイズが大きすぎます（上限は100MBです）",
+    };
   }
 
+  // ★ テキスト以外
   if (!isTextFile(file)) {
-    return { ok: false, message: "テキスト以外のファイルは非対応です（.txt/.json/.csv など）" };
+    return {
+      ok: false,
+      message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv など）",
+    };
   }
 
-  return { ok: true, message: "OK" };
+  return { ok: true };
 }
 
 // ----------------------------
