@@ -1,8 +1,8 @@
-// qa_maintenance.js（完全版：サイズチェックOKなら "Hi" を ank-knowledge-api /v1/echo に送って戻りを表示）
-//
-// 注意：
-// - 既存の apiFetch() は admin系API（/v1/contracts, /v1/admin/*）を叩く前提
-// - echo は ank-knowledge-api に行かせたいので、別BASEで叩く関数をこのファイル内に用意する
+// qa_maintenance.js（修正版）
+// - 対話データの「有効/無効」概念を廃止
+// - 一覧から「QA作成に使う対話データ」を1つ選ぶだけ
+// - /v1/admin/dialogues/activate は呼ばない
+// - /v1/admin/dialogues/build-qa は object_key を送る（サーバ側も合わせる前提）
 
 import { initFirebase, requireUser } from "./ank_firebase.js";
 import { apiFetch } from "./ank_api.js";
@@ -35,7 +35,6 @@ function setMainEnabled(enabled) {
   $("notSelectedMsg").style.visibility = enabled ? "hidden" : "visible";
 }
 
-function setActivateEnabled(enabled) { $("activateDialogueBtn").disabled = !enabled; }
 function setBuildEnabled(enabled) { $("buildQaBtn").disabled = !enabled; }
 
 // ----------------------------
@@ -93,11 +92,13 @@ let currentUser = null;
 let selectedContract = null;
 
 let dialogues = [];
-let selectedDialogueKey = null;
-let activeDialogueKey = null;
+let selectedDialogueKey = null; // object_key
 
-// 方式判定結果（最後の判定）
-let lastJudge = null; // {can_extract_qa, method, confidence, reasons, stats}
+function setSelectedDialogueLabel() {
+  const el = $("selectedDialogueLabel");
+  if (!el) return;
+  el.textContent = selectedDialogueKey ? `選択: ${selectedDialogueKey}` : "選択: 未選択";
+}
 
 // ----------------------------
 // 契約一覧（/v1/contracts 仕様）
@@ -157,11 +158,9 @@ function renderContracts(contracts) {
 
       dialogues = [];
       selectedDialogueKey = null;
-      activeDialogueKey = null;
       renderDialogues();
-      setActivateEnabled(false);
       setBuildEnabled(false);
-      $("activeDialogueLabel").textContent = "";
+      setSelectedDialogueLabel();
 
       logLine("契約を選択", { contract_id: c.contract_id, display: name });
 
@@ -289,23 +288,32 @@ async function onUpload() {
     await uploadToSignedUrl(upload_url, file);
     logLine("GCSへアップロード完了", { object_key });
 
-    try {
-      const fin = await finalizeUpload({
-          contract_id: selectedContract.contract_id,
-          object_key,
-          upload_id,
+    const fin = await finalizeUpload({
+      contract_id: selectedContract.contract_id,
+      object_key,
+      upload_id,
     });
-      logLine("アップロード成功（QA化OK）", {
-        object_key: fin.object_key,
-        qa_mode: fin.qa_mode,
-        confidence: fin.confidence,
-        reasons: fin.reasons,
-      });
-    } catch (e) {
-      logLine("アップロード確定は未実装でも進行可", { error: String(e) });
+
+    // finalize が ok:false のときは NG
+    if (fin && fin.ok === false) {
+      showFileError("QA化できない形式です");
+      logLine("アップロード失敗（判定NG）", fin);
+      return;
     }
 
+    logLine("アップロード成功（DB記録）", fin);
+
+    // 一覧の再読込＋「最新を自動選択」
     await loadDialogues();
+
+    // 最新の object_key を選ぶ（返ってきたものを優先）
+    if (fin?.object_key) {
+      selectedDialogueKey = fin.object_key;
+    } else if (object_key) {
+      selectedDialogueKey = object_key;
+    }
+    setSelectedDialogueLabel();
+    setBuildEnabled(!!selectedDialogueKey);
 
   } catch (e) {
     showFileError(String(e));
@@ -314,7 +322,7 @@ async function onUpload() {
 }
 
 // ----------------------------
-// ② 対話データ一覧
+// ② 対話データ一覧（選択のみ）
 // ----------------------------
 function renderDialogues() {
   const listEl = $("dialogues");
@@ -325,7 +333,6 @@ function renderDialogues() {
   if (!selectedContract) {
     emptyEl.textContent = "（契約を選択してください）";
     emptyEl.style.display = "block";
-    setActivateEnabled(false);
     setBuildEnabled(false);
     return;
   }
@@ -333,7 +340,6 @@ function renderDialogues() {
   if (!dialogues || dialogues.length === 0) {
     emptyEl.textContent = "（対話データがありません）";
     emptyEl.style.display = "block";
-    setActivateEnabled(false);
     setBuildEnabled(false);
     return;
   }
@@ -342,11 +348,10 @@ function renderDialogues() {
 
   dialogues.forEach((d) => {
     const key = d.object_key;
-    const isActive = activeDialogueKey && key === activeDialogueKey;
     const isSelected = selectedDialogueKey && key === selectedDialogueKey;
 
     const div = document.createElement("div");
-    div.className = "item" + (isActive ? " active" : "");
+    div.className = "item" + (isSelected ? " selected" : "");
 
     const created = d.created_at ? String(d.created_at) : "";
     const monthKey = d.month_key ? String(d.month_key) : "";
@@ -357,7 +362,7 @@ function renderDialogues() {
         <div class="radio">
           <input type="radio" name="dialoguePick" ${isSelected ? "checked" : ""} />
           <div>
-            <div><span class="badge">${isActive ? "有効" : "保管"}</span> ${escapeHtml(fileLabel)}</div>
+            <div>${escapeHtml(fileLabel)}</div>
             <div class="small">month: ${escapeHtml(monthKey)} / created: ${escapeHtml(created)}</div>
           </div>
         </div>
@@ -367,7 +372,8 @@ function renderDialogues() {
 
     div.querySelector("input[type=radio]").addEventListener("change", () => {
       selectedDialogueKey = key;
-      setActivateEnabled(true);
+      setSelectedDialogueLabel();
+      setBuildEnabled(true);
       logLine("対話データを選択", { object_key: key });
       renderDialogues();
     });
@@ -375,8 +381,8 @@ function renderDialogues() {
     listEl.appendChild(div);
   });
 
-  setBuildEnabled(!!activeDialogueKey);
-  $("activeDialogueLabel").textContent = activeDialogueKey ? `有効: ${activeDialogueKey}` : "有効: 未選択";
+  setSelectedDialogueLabel();
+  setBuildEnabled(!!selectedDialogueKey);
 }
 
 async function loadDialogues() {
@@ -396,72 +402,44 @@ async function loadDialogues() {
     const items = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : []);
     dialogues = items;
 
-    activeDialogueKey = res?.active_object_key || null;
+    logLine("対話データ一覧 取得完了", { count: dialogues.length });
 
-    if (!selectedDialogueKey && activeDialogueKey) {
-      selectedDialogueKey = activeDialogueKey;
-      setActivateEnabled(true);
-    } else if (!selectedDialogueKey) {
-      setActivateEnabled(false);
+    // 何も選ばれていなければ先頭を選ぶ（任意：不要なら消してOK）
+    if (!selectedDialogueKey && dialogues.length > 0) {
+      selectedDialogueKey = dialogues[0].object_key;
     }
 
-    logLine("対話データ一覧 取得完了", { count: dialogues.length, active: activeDialogueKey });
-    lastJudge = null;
     renderDialogues();
 
   } catch (e) {
     dialogues = [];
-    activeDialogueKey = null;
     selectedDialogueKey = null;
-    setActivateEnabled(false);
     setBuildEnabled(false);
-    $("activeDialogueLabel").textContent = "";
     renderDialogues();
     logLine("対話データ一覧 取得失敗", { error: String(e) });
   }
 }
 
-async function onActivateDialogue() {
+// ----------------------------
+// ③ QA作成（選択中 object_key を送る）
+// ----------------------------
+async function onBuildQa() {
   if (!selectedContract) return;
-  if (!selectedDialogueKey) return;
+  if (!selectedDialogueKey) {
+    logLine("QA作成: 対話データが未選択");
+    return;
+  }
 
   const contract_id = selectedContract.contract_id;
   const object_key = selectedDialogueKey;
 
   try {
-    logLine("対話データ 有効化開始", { contract_id, object_key });
+    logLine("QA作成 開始", { contract_id, object_key });
 
-    const res = await apiFetch(currentUser, "/v1/admin/dialogues/activate", {
-      method: "POST",
-      body: { contract_id, object_key },
-    });
-
-    logLine("対話データ 有効化完了", res);
-    await loadDialogues();
-
-  } catch (e) {
-    logLine("対話データ 有効化失敗", { error: String(e) });
-  }
-}
-
-// ----------------------------
-// ③ QA作成
-// ----------------------------
-async function onBuildQa() {
-  if (!selectedContract) return;
-  if (!activeDialogueKey) {
-    logLine("QA作成: 有効な対話データが未選択");
-    return;
-  }
-
-  const contract_id = selectedContract.contract_id;
-
-  try {
-    logLine("QA作成 開始", { contract_id });
-
+    // ★変更：object_key を送る
     const res = await apiFetch(currentUser, "/v1/admin/dialogues/build-qa", {
       method: "POST",
-      body: { contract_id },
+      body: { contract_id, object_key },
     });
 
     logLine("QA作成 要求完了", res);
@@ -479,7 +457,6 @@ async function init() {
   $("uploadBtn").addEventListener("click", onUpload);
   $("dryRunBtn").addEventListener("click", onDryRun);
   $("reloadDialoguesBtn").addEventListener("click", loadDialogues);
-  $("activateDialogueBtn").addEventListener("click", onActivateDialogue);
   $("buildQaBtn").addEventListener("click", onBuildQa);
 
   $("fileInput").addEventListener("change", () => {
@@ -488,10 +465,9 @@ async function init() {
 
   $("selectedContractName").textContent = "未選択";
   $("selectedContractId").textContent = "";
-  $("activeDialogueLabel").textContent = "";
+  setSelectedDialogueLabel();
   clearFileError();
   setMainEnabled(false);
-  setActivateEnabled(false);
   setBuildEnabled(false);
   renderDialogues();
 
