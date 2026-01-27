@@ -31,8 +31,6 @@ function setMainEnabled(enabled) {
   $("fileInput").disabled = !enabled;
   $("uploadBtn").disabled = !enabled;
   $("dryRunBtn").disabled = !enabled;
-  $("echoTestBtn").disabled = !enabled; // ★追加
-  $("judgeMethodBtn").disabled = !enabled; // ★追加
   $("reloadDialoguesBtn").disabled = !enabled;
   $("notSelectedMsg").style.visibility = enabled ? "hidden" : "visible";
 }
@@ -54,12 +52,6 @@ function clearFileError() {
   if (!el) return;
   el.textContent = "";
   el.style.display = "none";
-}
-
-function setJudgeLabel(text) {
-  const el = $("judgeMethodLabel");
-  if (!el) return;
-  el.textContent = text || "";
 }
 
 // ----------------------------
@@ -92,42 +84,6 @@ function validateBeforeUpload(file) {
     return { ok: false, message: "テキスト以外のファイルはアップロードできません（.txt / .json / .csv）" };
   }
   return { ok: true };
-}
-
-// ----------------------------
-// ★追加：ank-knowledge-api にだけ飛ばすための BASE
-// ここをあなたの Cloud Run URL に合わせて設定する
-// ----------------------------
-const KNOWLEDGE_API_BASE = "https://ank-knowledge-api-986862757498.asia-northeast1.run.app";
-
-// Bearer token 付きで任意BASEへPOST/GETする（echo専用に使う）
-async function apiFetchToBase(user, baseUrl, path, { method = "GET", body = null } = {}) {
-  if (!user) throw new Error("not signed in");
-
-  const token = await user.getIdToken(true);
-
-  const headers = {
-    "Authorization": `Bearer ${token}`,
-  };
-  if (body) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : null,
-  });
-
-  const text = await res.text().catch(() => "");
-  if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${text}`);
-  }
-
-  // echoはjson想定
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
 }
 
 // ----------------------------
@@ -198,8 +154,6 @@ function renderContracts(contracts) {
 
       setMainEnabled(true);
       clearFileError();
-      setJudgeLabel("");
-      lastJudge = null;
 
       dialogues = [];
       selectedDialogueKey = null;
@@ -337,11 +291,16 @@ async function onUpload() {
 
     try {
       const fin = await finalizeUpload({
-        contract_id: selectedContract.contract_id,
-        object_key,
-        upload_id,
+          contract_id: selectedContract.contract_id,
+          object_key,
+          upload_id,
+    });
+      logLine("アップロード成功（QA化OK）", {
+        object_key: fin.object_key,
+        qa_mode: fin.qa_mode,
+        confidence: fin.confidence,
+        reasons: fin.reasons,
       });
-      logLine("アップロード確定（DB記録）", fin);
     } catch (e) {
       logLine("アップロード確定は未実装でも進行可", { error: String(e) });
     }
@@ -351,101 +310,6 @@ async function onUpload() {
   } catch (e) {
     showFileError(String(e));
     logLine("アップロード失敗", { error: String(e) });
-  }
-}
-
-// ----------------------------
-// ★追加：OpenAI echo テスト（ファイルチェックOKなら "Hi" を送る）
-// ----------------------------
-async function onEchoTest() {
-  if (!selectedContract) return;
-
-  const file = $("fileInput").files?.[0];
-  const pre = validateBeforeUpload(file);
-  if (!pre.ok) {
-    showFileError(pre.message);
-    logLine("OpenAI Echoテスト中止（事前チェックNG）", {
-      reason: pre.message,
-      filename: file?.name,
-      content_type: file?.type || "",
-      size_bytes: Number(file?.size || 0),
-    });
-    return;
-  }
-
-  clearFileError();
-
-  // ここで入力は不要。常にHi。
-  const message = "Hi";
-
-  try {
-    logLine("OpenAI Echoテスト 開始（ank-knowledge-api）", { message });
-
-    const res = await apiFetchToBase(currentUser, KNOWLEDGE_API_BASE, "/v1/echo", {
-      method: "POST",
-      body: { message },
-    });
-
-    logLine("OpenAI Echoテスト 成功", res);
-
-  } catch (e) {
-    showFileError(String(e));
-    logLine("OpenAI Echoテスト 失敗", { error: String(e) });
-  }
-}
-
-
-// ----------------------------
-// ★追加：方式判定（/v1/admin/dialogues/judge-method）
-// - selectedDialogueKey があればそれを優先、なければ activeDialogueKey
-// - contract_id は必須
-// ----------------------------
-async function onJudgeMethod() {
-  if (!selectedContract) return;
-
-  const file = $("fileInput").files?.[0];
-  const pre = validateBeforeUpload(file);
-  if (!pre.ok) {
-    showFileError(pre.message);
-    logLine("方式判定 中止（事前チェックNG）", {
-      reason: pre.message,
-      filename: file?.name,
-      content_type: file?.type || "",
-      size_bytes: Number(file?.size || 0),
-    });
-    return;
-  }
-
-  clearFileError();
-
-  const contract_id = selectedContract.contract_id;
-  const object_key = selectedDialogueKey || activeDialogueKey || null;
-
-  try {
-    logLine("方式判定 開始", { contract_id, object_key });
-
-    const body = object_key ? { contract_id, object_key } : { contract_id };
-    const res = await apiFetch(currentUser, "/v1/admin/dialogues/judge-method", {
-      method: "POST",
-      body,
-    });
-
-    lastJudge = res;
-    const method = res?.method ? String(res.method) : "-";
-    const conf = (typeof res?.confidence === "number") ? res.confidence.toFixed(2) : "";
-    const ok = !!res?.can_extract_qa;
-
-    setJudgeLabel(ok ? `判定: ${method}（conf ${conf}）` : "判定: QA抽出不可");
-    logLine("方式判定 完了", res);
-
-    if (!ok) {
-      const reasons = Array.isArray(res?.reasons) ? res.reasons.join(" / ") : "";
-      showFileError(reasons ? `QA抽出できません: ${reasons}` : "QA抽出できません");
-    }
-  } catch (e) {
-    setJudgeLabel("判定: 失敗");
-    showFileError(String(e));
-    logLine("方式判定 失敗", { error: String(e) });
   }
 }
 
@@ -615,8 +479,6 @@ async function init() {
   $("reloadContractsBtn").addEventListener("click", loadContracts);
   $("uploadBtn").addEventListener("click", onUpload);
   $("dryRunBtn").addEventListener("click", onDryRun);
-  $("echoTestBtn").addEventListener("click", onEchoTest); // ★追加
-  $("judgeMethodBtn").addEventListener("click", onJudgeMethod); // ★追加
   $("reloadDialoguesBtn").addEventListener("click", loadDialogues);
   $("activateDialogueBtn").addEventListener("click", onActivateDialogue);
   $("buildQaBtn").addEventListener("click", onBuildQa);
