@@ -437,7 +437,7 @@ async function onBuildQa() {
     logLine("QA作成 開始", { contract_id, object_key });
 
     // ★変更：object_key を送る
-    const res = await apiFetch(currentUser, "/v1/admin/dialogues/build-qa", {
+    const res = await apiFetch(currentUser, "/v1/qa/build", {
       method: "POST",
       body: { contract_id, object_key },
     });
