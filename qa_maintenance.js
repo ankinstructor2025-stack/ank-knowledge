@@ -406,7 +406,6 @@ async function loadDialogues() {
     }
 
     logLine("対話データ一覧 取得完了", { count: dialogues.length, active: activeDialogueKey });
-    setJudgeLabel("");
     lastJudge = null;
     renderDialogues();
 
@@ -490,7 +489,6 @@ async function init() {
   $("selectedContractName").textContent = "未選択";
   $("selectedContractId").textContent = "";
   $("activeDialogueLabel").textContent = "";
-  setJudgeLabel("");
   clearFileError();
   setMainEnabled(false);
   setActivateEnabled(false);
