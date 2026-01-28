@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>新規アカウント作成</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 720px; margin: 40px auto; }
+    h1 { font-size: 1.4rem; }
+    .box { border: 1px solid #ccc; padding: 20px; border-radius: 6px; }
+    label { display: block; margin-top: 16px; }
+    input { width: 100%; padding: 8px; font-size: 1rem; }
+    button { margin-top: 24px; padding: 10px 16px; font-size: 1rem; }
+    .status { margin-top: 16px; }
+    .error { color: #b00020; }
+    .ok { color: #006400; }
+  </style>
+</head>
+<body>
+  <h1>新規アカウント作成</h1>
+
+  <div class="box">
+    <p>
+      このサービスを利用するための<br>
+      <strong>アカウント（顧客単位）</strong>を作成します。
+    </p>
+
+    <label>
+      アカウント名（任意）
+      <input id="accountName" placeholder="例：◯◯株式会社 / 個人利用 など">
+    </label>
+
+    <button id="btnCreate">アカウントを作成</button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script type="module" src="./account_new.js"></script>
+</body>
+</html>
