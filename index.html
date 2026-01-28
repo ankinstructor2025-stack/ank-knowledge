@@ -31,25 +31,19 @@
     <div id="status" class="status"></div>
   </div>
 
-  <!-- 共通 -->
+  <!-- 共通（この後は tenants → tenant_admin に進む想定） -->
   <div class="card">
     <div style="font-weight:700; margin-bottom:10px;">メンバー</div>
     <div class="row">
       <button id="btnSearch">QA検索</button>
     </div>
+    <div class="muted" style="margin-top:8px;">
+      ※ まずはテナントを選択して「契約」を確定すると、ユーザー管理・ナレッジ管理が利用できます。
+    </div>
   </div>
 
-  <!-- 管理者（role=admin のときだけ表示） -->
-  <div id="adminArea" class="card" style="display:none;">
-    <div style="font-weight:700; margin-bottom:10px;">管理者</div>
-    <div class="row">
-      <button id="btnContracts">契約一覧</button>
-      <button id="btnMembers">ユーザー一覧</button>
-      <button id="btnKnowledge">ナレッジ作成</button>
-      <button id="btnAdminSearch">QA検索（管理）</button>
-    </div>
-    <div class="muted" style="margin-top:8px;">role=admin の契約が active のときだけ表示されます。</div>
-  </div>
+  <!-- 旧 管理者カードは廃止（tenant_admin のタブに統合） -->
+  <div id="adminArea" style="display:none;"></div>
 
   <script type="module" src="./index.js"></script>
 </body>
