@@ -7,46 +7,144 @@ const { auth } = initFirebase();
 const params = new URLSearchParams(location.search);
 const accountId = params.get("account_id");
 
-const ul = document.getElementById("tenantList");
+const debugInfo = document.getElementById("debugInfo");
 const btnCreate = document.getElementById("btnCreate");
-const nameInput = document.getElementById("tenantName");
+const btnReload = document.getElementById("btnReload");
+const tenantName = document.getElementById("tenantName");
+
 const createStatus = document.getElementById("createStatus");
 const listStatus = document.getElementById("listStatus");
-const debugInfo = document.getElementById("debugInfo");
+const tbody = document.getElementById("rows");
 
-function setCreate(msg, cls = "") {
-  createStatus.textContent = msg;
-  createStatus.className = "status " + cls;
+function setStatus(el, msg, type) {
+  el.textContent = msg;
+  el.className = "status " + (type || "");
+  el.style.display = msg ? "block" : "none";
 }
-function setList(msg, cls = "") {
-  listStatus.textContent = msg;
-  listStatus.className = "status " + cls;
+
+function yen(n) {
+  if (n == null || n === "" || Number.isNaN(Number(n))) return "-";
+  return Number(n).toLocaleString("ja-JP") + "円";
+}
+
+function pill(text, kind) {
+  const span = document.createElement("span");
+  span.className = "pill " + (kind || "");
+  span.textContent = text;
+  return span;
+}
+
+function gotoTenantAdmin(tenantId, tab) {
+  const t = encodeURIComponent(tenantId);
+  const a = encodeURIComponent(accountId || "");
+  const tb = encodeURIComponent(tab || "contract");
+  location.href = `./tenant_admin.html?tenant_id=${t}&account_id=${a}&tab=${tb}`;
 }
 
 function renderTenants(list) {
-  ul.innerHTML = "";
+  tbody.innerHTML = "";
+
   if (!list || list.length === 0) {
-    ul.innerHTML = "<li>まだテナントがありません</li>";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    td.textContent = "契約がありません。まずは上のフォームから作成してください。";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
     return;
   }
+
   for (const t of list) {
-    const li = document.createElement("li");
-    const a = document.createElement("a");
-    a.href = `./tenant_admin.html?tenant_id=${encodeURIComponent(t.tenant_id)}&account_id=${encodeURIComponent(accountId)}`;
-    a.textContent = t.name || t.tenant_id;
-    li.appendChild(a);
-    ul.appendChild(li);
+    const tenantId = t.tenant_id;
+    const name = t.name || tenantId;
+    const contractStatus = (t.contract_status || "draft").toLowerCase();
+    const isActive = (contractStatus === "active");
+    const paid = !!t.payment_method_configured;
+
+    const seat = (t.seat_limit != null) ? `${t.seat_limit}人` : "-";
+    const kc = (t.knowledge_count != null) ? `${t.knowledge_count}` : "-";
+    const monthly = (t.monthly_amount_yen != null) ? yen(t.monthly_amount_yen) : "-";
+
+    const tr = document.createElement("tr");
+
+    // 契約
+    const tdName = document.createElement("td");
+    tdName.dataset.label = "契約";
+    const divName = document.createElement("div");
+    divName.className = "name";
+    divName.textContent = name;
+    const divId = document.createElement("div");
+    divId.innerHTML = `<code>${tenantId}</code>`;
+    tdName.appendChild(divName);
+    tdName.appendChild(divId);
+
+    // 状態
+    const tdStatus = document.createElement("td");
+    tdStatus.dataset.label = "状態";
+    const p1 = pill(contractStatus, isActive ? "ok" : "warn");
+    const p2 = pill(paid ? "paid" : "unpaid", paid ? "ok" : "warn");
+    tdStatus.appendChild(p1);
+    tdStatus.appendChild(document.createTextNode(" "));
+    tdStatus.appendChild(p2);
+
+    // プラン
+    const tdPlan = document.createElement("td");
+    tdPlan.dataset.label = "プラン";
+    tdPlan.innerHTML = `
+      <div>人数: <strong>${seat}</strong></div>
+      <div>ナレッジ: <strong>${kc}</strong></div>
+      <div>月額: <strong>${monthly}</strong></div>
+    `;
+
+    // 操作
+    const tdBtns = document.createElement("td");
+    tdBtns.dataset.label = "操作";
+    const box = document.createElement("div");
+    box.className = "btns";
+
+    const bContract = document.createElement("button");
+    bContract.textContent = "契約";
+    bContract.onclick = () => gotoTenantAdmin(tenantId, "contract");
+    box.appendChild(bContract);
+
+    const bUsers = document.createElement("button");
+    bUsers.textContent = "ユーザー管理";
+    bUsers.disabled = !isActive;
+    bUsers.title = isActive ? "" : "契約を確定してから利用できます";
+    bUsers.onclick = () => gotoTenantAdmin(tenantId, "users");
+    box.appendChild(bUsers);
+
+    const bKnow = document.createElement("button");
+    bKnow.textContent = "ナレッジ管理";
+    bKnow.disabled = !isActive;
+    bKnow.title = isActive ? "" : "契約を確定してから利用できます";
+    bKnow.onclick = () => gotoTenantAdmin(tenantId, "knowledge");
+    box.appendChild(bKnow);
+
+    tdBtns.appendChild(box);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdPlan);
+    tr.appendChild(tdBtns);
+
+    tbody.appendChild(tr);
   }
 }
 
 async function loadTenants(user) {
-  setList("読み込み中…");
-  const res = await apiFetch(user, `/v1/tenants?account_id=${encodeURIComponent(accountId)}`, { method: "GET" });
-  renderTenants(res.tenants || []);
-  setList(`表示件数: ${(res.tenants || []).length}`, "ok");
+  setStatus(listStatus, "読み込み中…", "ok");
+  const res = await apiFetch(
+    user,
+    `/v1/tenants?account_id=${encodeURIComponent(accountId)}`,
+    { method: "GET" }
+  );
+  const list = res.tenants || [];
+  renderTenants(list);
+  setStatus(listStatus, `表示件数: ${list.length}`, "ok");
 }
 
-debugInfo.textContent = `JS起動OK / account_id=${accountId || "(none)"}`;
+debugInfo.textContent = `account_id=${accountId || "(none)"}`;
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
@@ -54,29 +152,34 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   if (!accountId) {
-    setList("URLに account_id がありません。tenants.html?account_id=... の形式で開いてください。", "err");
+    setStatus(listStatus, "URLに account_id がありません。tenants.html?account_id=... の形式で開いてください。", "err");
     return;
   }
+
   try {
     await loadTenants(user);
   } catch (e) {
     console.error(e);
-    setList(e?.message || String(e), "err");
+    setStatus(listStatus, e?.message || String(e), "err");
+  }
+});
+
+btnReload.addEventListener("click", async () => {
+  if (!auth.currentUser) return;
+  try {
+    await loadTenants(auth.currentUser);
+  } catch (e) {
+    console.error(e);
+    setStatus(listStatus, e?.message || String(e), "err");
   }
 });
 
 btnCreate.addEventListener("click", async (ev) => {
   ev.preventDefault();
-
-  // ここが出なければ「クリックが発火してない」
-  setCreate("クリック検知…", "ok");
-  console.log("btnCreate clicked");
+  if (!auth.currentUser) return;
 
   try {
-    if (!auth.currentUser) throw new Error("not signed in");
-    if (!accountId) throw new Error("account_id missing");
-
-    setCreate("作成API呼び出し中…");
+    setStatus(createStatus, "作成中…", "ok");
 
     const res = await apiFetch(
       auth.currentUser,
@@ -85,19 +188,23 @@ btnCreate.addEventListener("click", async (ev) => {
         method: "POST",
         body: {
           account_id: accountId,
-          name: nameInput.value.trim()
+          name: tenantName.value.trim()
         }
       }
     );
 
-    console.log("create tenant ok", res);
-    setCreate(`作成しました: ${res.tenant_id}`, "ok");
-    nameInput.value = "";
+    const tid = res.tenant_id;
+    setStatus(createStatus, `作成しました: ${tid}`, "ok");
+    tenantName.value = "";
 
+    // 一覧更新
     await loadTenants(auth.currentUser);
+
+    // すぐ契約タブへ入る（導線が自然）
+    gotoTenantAdmin(tid, "contract");
 
   } catch (e) {
     console.error(e);
-    setCreate(e?.message || String(e), "err");
+    setStatus(createStatus, e?.message || String(e), "err");
   }
 });
