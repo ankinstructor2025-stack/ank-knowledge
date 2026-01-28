@@ -43,7 +43,7 @@ async function routeAfterLogin(user) {
 
   // users登録済 & active契約あり → 通常画面
   if (sess.has_active_contract) {
-    location.replace("./index.html");
+    location.replace("./");   // ルートに戻す（= index.htmlが表示される）
     return;
   }
 
