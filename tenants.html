@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>テナント一覧</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 40px auto; }
+    h1 { font-size: 1.4rem; }
+    .box { border: 1px solid #ccc; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+    ul { padding-left: 18px; }
+    li { margin: 6px 0; }
+    button { padding: 6px 12px; }
+    .status { margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>テナント一覧</h1>
+
+<div class="box">
+  <h3>新規テナント作成</h3>
+  <input id="tenantName" placeholder="テナント名（任意）" style="width:100%;padding:6px">
+  <button id="btnCreate">作成</button>
+  <div id="createStatus" class="status"></div>
+</div>
+
+<div class="box">
+  <h3>所属テナント</h3>
+  <ul id="tenantList"></ul>
+</div>
+
+<script type="module" src="./tenants.js"></script>
+</body>
+</html>
