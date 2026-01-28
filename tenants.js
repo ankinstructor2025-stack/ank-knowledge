@@ -32,7 +32,7 @@ function renderTenants(list) {
   for (const t of list) {
     const li = document.createElement("li");
     const a = document.createElement("a");
-    a.href = `./qa_search.html?tenant_id=${encodeURIComponent(t.tenant_id)}`;
+    a.href = `./tenant_admin.html?tenant_id=${encodeURIComponent(t.tenant_id)}&account_id=${encodeURIComponent(accountId)}`;
     a.textContent = t.name || t.tenant_id;
     li.appendChild(a);
     ul.appendChild(li);

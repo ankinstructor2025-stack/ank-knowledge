@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>テナント管理</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 40px auto; }
+    h1 { font-size: 1.4rem; }
+    .box { border: 1px solid #ccc; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+    button { padding: 8px 12px; margin-right: 8px; }
+    .muted { color:#666; }
+    .row { margin: 6px 0; }
+  </style>
+</head>
+<body>
+
+<h1 id="title">テナント管理</h1>
+<div class="muted" id="sub"></div>
+
+<div class="box">
+  <div class="row"><strong>テナントID:</strong> <span id="tenantId"></span></div>
+  <div class="row"><strong>名前:</strong> <span id="tenantName"></span></div>
+  <div class="row"><strong>状態:</strong> <span id="tenantStatus"></span></div>
+</div>
+
+<div class="box">
+  <h3>操作</h3>
+  <button id="btnSearch" type="button">QA検索へ</button>
+  <button id="btnBack" type="button">テナント一覧へ戻る</button>
+</div>
+
+<div class="box">
+  <h3>メモ</h3>
+  <div class="muted">
+    ここがハブ。将来ここに「ユーザー管理」「支払い設定」「ナレッジ取り込み」「ロック状態」などを足す。
+  </div>
+</div>
+
+<script type="module" src="./tenant_admin.js"></script>
+</body>
+</html>
