@@ -11,22 +11,27 @@
     ul { padding-left: 18px; }
     li { margin: 6px 0; }
     button { padding: 6px 12px; }
-    .status { margin-top: 10px; }
+    .status { margin-top: 10px; white-space: pre-wrap; }
+    .ok { color: #006400; }
+    .err { color: #b00020; }
+    .muted { color: #666; font-size: 0.9rem; }
   </style>
 </head>
 <body>
 
 <h1>テナント一覧</h1>
+<div class="muted" id="debugInfo"></div>
 
 <div class="box">
   <h3>新規テナント作成</h3>
   <input id="tenantName" placeholder="テナント名（任意）" style="width:100%;padding:6px">
-  <button id="btnCreate">作成</button>
+  <button id="btnCreate" type="button">作成</button>
   <div id="createStatus" class="status"></div>
 </div>
 
 <div class="box">
   <h3>所属テナント</h3>
+  <div id="listStatus" class="status"></div>
   <ul id="tenantList"></ul>
 </div>
 
