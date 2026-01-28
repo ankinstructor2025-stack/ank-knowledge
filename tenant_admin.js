@@ -24,6 +24,7 @@ const knowSel = document.getElementById("knowledgeCountSelect");
 const noteEl = document.getElementById("note");
 
 const kpiBase = document.getElementById("kpiBase");
+const kpiExtra = document.getElementById("kpiExtra"); // ★HTML側にあるので合わせる
 const kpiMonthly = document.getElementById("kpiMonthly");
 
 const btnSave = document.getElementById("btnSave");
@@ -75,30 +76,81 @@ function clampNote(s) {
  *   knowledge_count: [{value, monthly_price, label}],
  *   notes: {...}
  * }
+ *
+ * ただし、現状は「新形式」も受ける:
+ * {
+ *   currency: "JPY",
+ *   seats: [5,10,30],
+ *   knowledge_count: [1,2,3,4,5],
+ *   knowledge_add_price: 50000,
+ *   ...
+ * }
  */
 function normalizePricing(p) {
   const currency = (p?.currency || "JPY").toString();
-  const seatsRaw = Array.isArray(p?.seats) ? p.seats : [];
-  const kcRaw = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
   const notes = p?.notes || {};
 
-  const seats = seatsRaw
-    .map(x => ({
-      seat_limit: Number(x.seat_limit),
-      monthly_fee: Number(x.monthly_fee),
-      label: String(x.label || "")
-    }))
-    .filter(x => Number.isFinite(x.seat_limit) && Number.isFinite(x.monthly_fee))
-    .sort((a,b) => a.seat_limit - b.seat_limit);
+  // --- seats ---
+  let seats = [];
+  if (Array.isArray(p?.seats) && p.seats.length > 0) {
+    const first = p.seats[0];
 
-  const knowledge_count = kcRaw
-    .map(x => ({
-      value: Number(x.value),
-      monthly_price: Number(x.monthly_price || 0),
-      label: String(x.label || x.value || "")
-    }))
-    .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
-    .sort((a,b) => a.value - b.value);
+    if (typeof first === "number") {
+      // 新形式: [5,10,30]
+      seats = p.seats
+        .map(v => ({
+          seat_limit: Number(v),
+          monthly_fee: 0,
+          label: ""
+        }))
+        .filter(x => Number.isFinite(x.seat_limit))
+        .sort((a, b) => a.seat_limit - b.seat_limit);
+    } else {
+      // 旧形式: [{seat_limit, monthly_fee, label}]
+      seats = p.seats
+        .map(x => ({
+          seat_limit: Number(x?.seat_limit),
+          monthly_fee: Number(x?.monthly_fee),
+          label: String(x?.label || "")
+        }))
+        .filter(x => Number.isFinite(x.seat_limit) && Number.isFinite(x.monthly_fee))
+        .sort((a, b) => a.seat_limit - b.seat_limit);
+    }
+  }
+
+  // --- knowledge_count ---
+  let knowledge_count = [];
+  if (Array.isArray(p?.knowledge_count) && p.knowledge_count.length > 0) {
+    const first = p.knowledge_count[0];
+
+    if (typeof first === "number") {
+      // 新形式: [1,2,3,4,5]
+      const add = Number(p?.knowledge_add_price || 0);
+
+      knowledge_count = p.knowledge_count
+        .map(v => {
+          const vv = Number(v);
+          const monthly_price = (vv > 1 && Number.isFinite(add)) ? (vv - 1) * add : 0;
+          return {
+            value: vv,
+            monthly_price,
+            label: String(vv)
+          };
+        })
+        .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
+        .sort((a, b) => a.value - b.value);
+    } else {
+      // 旧形式: [{value, monthly_price, label}]
+      knowledge_count = p.knowledge_count
+        .map(x => ({
+          value: Number(x?.value),
+          monthly_price: Number(x?.monthly_price || 0),
+          label: String(x?.label || x?.value || "")
+        }))
+        .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
+        .sort((a, b) => a.value - b.value);
+    }
+  }
 
   // 旧コード互換のため plans も用意（内部用）
   const plans = [];
@@ -109,9 +161,9 @@ function normalizePricing(p) {
         label: s.label || "",
         seat_limit: s.seat_limit,
         knowledge_count: k.value,
-        monthly_price: s.monthly_fee + k.monthly_price,
-        base_fee: s.monthly_fee,
-        extra_fee: k.monthly_price,
+        monthly_price: (Number(s.monthly_fee) || 0) + (Number(k.monthly_price) || 0),
+        base_fee: Number(s.monthly_fee) || 0,
+        extra_fee: Number(k.monthly_price) || 0,
       });
     }
   }
@@ -156,6 +208,7 @@ function renderEstimate(pricing) {
 
   if (!seatRaw || !knowRaw) {
     kpiBase.textContent = "-";
+    if (kpiExtra) kpiExtra.textContent = "0円";
     kpiMonthly.textContent = "-";
     btnSave.disabled = true;
     setStatus("", "");
@@ -165,6 +218,7 @@ function renderEstimate(pricing) {
   const plan = findPlan(pricing, Number(seatRaw), Number(knowRaw));
   if (!plan) {
     kpiBase.textContent = "-";
+    if (kpiExtra) kpiExtra.textContent = "0円";
     kpiMonthly.textContent = "-";
     btnSave.disabled = true;
     setStatus("料金計算に失敗しました。", "err");
@@ -176,6 +230,7 @@ function renderEstimate(pricing) {
     "ok"
   );
   kpiBase.textContent = yen(plan.base_fee);
+  if (kpiExtra) kpiExtra.textContent = yen(plan.extra_fee);
   kpiMonthly.textContent = yen(plan.monthly_price);
   btnSave.disabled = false;
 }
@@ -276,16 +331,4 @@ async function markPaid(currentUser) {
     const t = await loadTenant(currentUser);
     if (t?.seat_limit != null) seatSel.value = String(t.seat_limit);
     if (t?.knowledge_count != null) knowSel.value = String(t.knowledge_count);
-    if (t?.note) noteEl.value = t.note;
-  } catch (e) {
-    setStatus("tenant取得に失敗: " + (e?.message || String(e)), "err");
-    return;
-  }
-
-  renderEstimate(pricing);
-  seatSel.addEventListener("change", () => renderEstimate(pricing));
-  knowSel.addEventListener("change", () => renderEstimate(pricing));
-
-  btnSave.addEventListener("click", () => saveContract(currentUser, pricing));
-  btnPayDummy.addEventListener("click", () => markPaid(currentUser));
-})();
+    if (t?.note) note
