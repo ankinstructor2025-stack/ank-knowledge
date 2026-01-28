@@ -3,18 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>契約管理</title>
+  <title>テナント管理</title>
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; margin:0; background:#fafafa; }
     .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
     h1 { margin:0; font-size:18px; }
     .muted { color:#6b7280; font-size:13px; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .spacer { flex:1; }
     button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; }
-    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; background:#f9fafb; }
+    button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; background:#f9fafb; margin-right:6px; }
+    .pill.ok { border-color:#a7f3d0; background:#ecfdf5; color:#065f46; }
+    .pill.warn { border-color:#fed7aa; background:#fff7ed; color:#9a3412; }
     .box { margin-top:12px; padding:12px; border:1px dashed #d1d5db; border-radius:12px; background:#fcfcfd; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; color:#6b7280; }
+    .status { margin-top:10px; white-space:pre-wrap; }
   </style>
 </head>
 <body>
@@ -22,7 +27,7 @@
     <div class="card">
       <div class="row" style="justify-content:space-between;">
         <div>
-          <h1 id="title">契約管理</h1>
+          <h1 id="title">テナント管理</h1>
           <div class="muted" id="meta"></div>
         </div>
         <div class="row">
@@ -31,12 +36,15 @@
       </div>
 
       <div class="row" style="margin-top:12px;">
+        <button id="btnTabContract" type="button">契約</button>
+        <button id="btnTabUsers" type="button">ユーザー管理</button>
+        <button id="btnTabKnowledge" type="button">ナレッジ管理</button>
+        <div class="spacer"></div>
         <span class="pill" id="pillTab"></span>
       </div>
 
-      <div class="box" id="contentBox">
-        読み込み中…
-      </div>
+      <div class="box" id="contentBox">読み込み中…</div>
+      <div class="status muted" id="errBox"></div>
     </div>
   </div>
 
