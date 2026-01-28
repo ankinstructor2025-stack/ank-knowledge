@@ -5,47 +5,114 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>テナント管理</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; margin:0; background:#fafafa; }
-    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
-    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
-    h1 { margin:0; font-size:18px; }
+    body { font-family: system-ui, -apple-system, "Segoe UI","Noto Sans JP", sans-serif; margin:0; background:#fafafa; }
+    .wrap { max-width: 980px; margin: 32px auto; padding: 0 16px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,.04); margin-bottom: 16px; }
+    h1 { margin:0 0 10px; font-size:20px; }
     .muted { color:#6b7280; font-size:13px; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    .spacer { flex:1; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
     button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; }
     button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
-    .pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; background:#f9fafb; margin-right:6px; }
-    .pill.ok { border-color:#a7f3d0; background:#ecfdf5; color:#065f46; }
-    .pill.warn { border-color:#fed7aa; background:#fff7ed; color:#9a3412; }
-    .box { margin-top:12px; padding:12px; border:1px dashed #d1d5db; border-radius:12px; background:#fcfcfd; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; color:#6b7280; }
-    .status { margin-top:10px; white-space:pre-wrap; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .spacer { flex:1; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:14px; }
+    label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
+    select, textarea { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
+    textarea { min-height: 88px; resize: vertical; }
+    .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:14px; }
+    .kpi .box { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+    .kpi .title { font-size:12px; color:#6b7280; }
+    .kpi .val { margin-top:6px; font-size:16px; font-weight:700; }
+    .status { display:none; margin-top:12px; padding:10px 12px; border-radius:10px; font-size:14px; white-space:pre-wrap; }
+    .status.ok { display:block; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+    .status.err { display:block; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+    .hint { margin-top:10px; font-size:12px; color:#6b7280; line-height:1.6; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:12px; color:#6b7280; }
+    @media (max-width: 780px){
+      .row { grid-template-columns: 1fr; }
+      .kpi { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
+
     <div class="card">
-      <div class="row" style="justify-content:space-between;">
-        <div>
-          <h1 id="title">テナント管理</h1>
-          <div class="muted" id="meta"></div>
-        </div>
-        <div class="row">
-          <button id="btnBack">契約一覧へ戻る</button>
-        </div>
-      </div>
+      <h1>テナント管理</h1>
+      <div class="muted" id="metaLine"></div>
 
-      <div class="row" style="margin-top:12px;">
-        <button id="btnTabContract" type="button">契約</button>
-        <button id="btnTabUsers" type="button">ユーザー管理</button>
-        <button id="btnTabKnowledge" type="button">ナレッジ管理</button>
+      <div class="tabs">
+        <button id="tabContract" type="button">契約</button>
+        <button id="tabUsers" type="button">ユーザー管理</button>
+        <button id="tabKnowledge" type="button">ナレッジ管理</button>
         <div class="spacer"></div>
-        <span class="pill" id="pillTab"></span>
+        <button id="backBtn" type="button">テナント一覧へ戻る</button>
+      </div>
+    </div>
+
+    <!-- 契約 -->
+    <div class="card" id="panelContract">
+      <h2 style="margin:0 0 8px; font-size:16px;">契約内容</h2>
+      <div class="muted">支払い前は修正可能、支払い設定完了後は変更不可。</div>
+
+      <div class="row">
+        <div>
+          <label for="seatLimitSelect">人数（seat_limit）</label>
+          <select id="seatLimitSelect" disabled></select>
+        </div>
+
+        <div>
+          <label for="knowledgeCountSelect">ナレッジ数（knowledge_count）</label>
+          <select id="knowledgeCountSelect" disabled></select>
+        </div>
       </div>
 
-      <div class="box" id="contentBox">読み込み中…</div>
-      <div class="status muted" id="errBox"></div>
+      <div style="margin-top:14px;">
+        <label for="note">コメント（任意）</label>
+        <textarea id="note" maxlength="400" placeholder="例：自社本番／検証用／顧客A向け など"></textarea>
+      </div>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="title">基本料金</div>
+          <div class="val" id="kpiBase">-</div>
+        </div>
+        <div class="box">
+          <div class="title">ナレッジ追加</div>
+          <div class="val" id="kpiExtra">0円</div>
+        </div>
+        <div class="box">
+          <div class="title">月額合計（保存値）</div>
+          <div class="val" id="kpiMonthly">-</div>
+        </div>
+      </div>
+
+      <div class="tabs" style="margin-top:16px;">
+        <button id="btnPayDummy" type="button">支払い設定完了（仮）</button>
+        <div class="spacer"></div>
+        <button id="btnSave" class="primary" type="button" disabled>契約を保存</button>
+      </div>
+
+      <div class="hint">
+        ・保存時に <code>db/write.db</code> と <code>db/read.db</code> をGCSに生成します（無ければ）。<br>
+        ・支払い設定完了後は、契約の再保存は不可になります。<br>
+      </div>
+
+      <div id="status" class="status"></div>
     </div>
+
+    <!-- ユーザー管理 -->
+    <div class="card" id="panelUsers" style="display:none;">
+      <h2 style="margin:0 0 8px; font-size:16px;">ユーザー管理</h2>
+      <div class="muted">準備中</div>
+    </div>
+
+    <!-- ナレッジ管理 -->
+    <div class="card" id="panelKnowledge" style="display:none;">
+      <h2 style="margin:0 0 8px; font-size:16px;">ナレッジ管理</h2>
+      <div class="muted">準備中</div>
+    </div>
+
   </div>
 
   <script type="module" src="./tenant_admin.js"></script>
