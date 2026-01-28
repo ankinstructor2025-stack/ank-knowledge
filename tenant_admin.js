@@ -67,64 +67,81 @@ function clampNote(s) {
   return t.length <= 400 ? t : t.slice(0, 400);
 }
 
+/**
+ * pricing は「旧形式」を正とする:
+ * {
+ *   currency: "JPY",
+ *   seats: [{seat_limit, monthly_fee, label}],
+ *   knowledge_count: [{value, monthly_price, label}],
+ *   notes: {...}
+ * }
+ */
 function normalizePricing(p) {
   const currency = (p?.currency || "JPY").toString();
-  const plansRaw = Array.isArray(p?.plans) ? p.plans : [];
+  const seatsRaw = Array.isArray(p?.seats) ? p.seats : [];
+  const kcRaw = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
   const notes = p?.notes || {};
 
-  const plans = plansRaw
+  const seats = seatsRaw
     .map(x => ({
-      plan_id: String(x.plan_id || ""),
-      label: String(x.label || ""),
       seat_limit: Number(x.seat_limit),
-      knowledge_count: Number(x.knowledge_count),
-      monthly_price: Number(x.monthly_price),
+      monthly_fee: Number(x.monthly_fee),
+      label: String(x.label || "")
     }))
-    .filter(x =>
-      x.plan_id &&
-      Number.isFinite(x.seat_limit) &&
-      Number.isFinite(x.knowledge_count) &&
-      Number.isFinite(x.monthly_price)
-    );
+    .filter(x => Number.isFinite(x.seat_limit) && Number.isFinite(x.monthly_fee))
+    .sort((a,b) => a.seat_limit - b.seat_limit);
 
-  return { currency, notes, plans };
+  const knowledge_count = kcRaw
+    .map(x => ({
+      value: Number(x.value),
+      monthly_price: Number(x.monthly_price || 0),
+      label: String(x.label || x.value || "")
+    }))
+    .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
+    .sort((a,b) => a.value - b.value);
+
+  // 旧コード互換のため plans も用意（内部用）
+  const plans = [];
+  for (const s of seats) {
+    for (const k of knowledge_count) {
+      plans.push({
+        plan_id: `seat${s.seat_limit}_kc${k.value}`,
+        label: s.label || "",
+        seat_limit: s.seat_limit,
+        knowledge_count: k.value,
+        monthly_price: s.monthly_fee + k.monthly_price,
+        base_fee: s.monthly_fee,
+        extra_fee: k.monthly_price,
+      });
+    }
+  }
+
+  return { currency, notes, seats, knowledge_count, plans };
 }
 
+// 旧名のまま。中身は seats / knowledge_count を使う
 function fillSelectsFromPlans(pricing) {
-  // ここで必ず埋める（未選択プレースホルダ付き）
   seatSel.innerHTML = "";
   knowSel.innerHTML = "";
 
-  const seatOpt0 = document.createElement("option");
-  seatOpt0.value = "";
-  seatOpt0.textContent = "選択してください";
-  seatSel.appendChild(seatOpt0);
+  seatSel.appendChild(new Option("選択してください", ""));
+  knowSel.appendChild(new Option("選択してください", ""));
 
-  const knowOpt0 = document.createElement("option");
-  knowOpt0.value = "";
-  knowOpt0.textContent = "選択してください";
-  knowSel.appendChild(knowOpt0);
-
-  const seats = Array.from(new Set(pricing.plans.map(p => p.seat_limit))).sort((a,b) => a-b);
-  const knows = Array.from(new Set(pricing.plans.map(p => p.knowledge_count))).sort((a,b) => a-b);
-
-  for (const s of seats) {
-    const opt = document.createElement("option");
-    opt.value = String(s);
-    opt.textContent = `${s}人まで`;
-    seatSel.appendChild(opt);
+  for (const s of pricing.seats) {
+    seatSel.appendChild(new Option(`${s.seat_limit}人まで`, String(s.seat_limit)));
   }
-  for (const k of knows) {
-    const opt = document.createElement("option");
-    opt.value = String(k);
-    opt.textContent = String(k);
-    knowSel.appendChild(opt);
+
+  for (const k of pricing.knowledge_count) {
+    const extra = (k.monthly_price > 0) ? `（+${yen(k.monthly_price)}）` : "（基本料金に含む）";
+    const label = k.label ? `${k.label}${extra}` : `${k.value}${extra}`;
+    knowSel.appendChild(new Option(label, String(k.value)));
   }
 
   seatSel.disabled = false;
   knowSel.disabled = false;
 }
 
+// 旧名のまま。内部は plans（＝ seats×knowledge で自動生成）から探す
 function findPlan(pricing, seatLimit, knowledgeCount) {
   return pricing.plans.find(p =>
     p.seat_limit === Number(seatLimit) &&
@@ -132,6 +149,7 @@ function findPlan(pricing, seatLimit, knowledgeCount) {
   ) || null;
 }
 
+// 旧名のまま。monthly_price は base + extra の合算を表示
 function renderEstimate(pricing) {
   const seatRaw = seatSel.value || "";
   const knowRaw = knowSel.value || "";
@@ -149,12 +167,15 @@ function renderEstimate(pricing) {
     kpiBase.textContent = "-";
     kpiMonthly.textContent = "-";
     btnSave.disabled = true;
-    setStatus("選択した組み合わせに一致するプランがありません。", "err");
+    setStatus("料金計算に失敗しました。", "err");
     return;
   }
 
-  setStatus(`選択プラン: ${plan.plan_id}（${plan.label}）`, "ok");
-  kpiBase.textContent = yen(plan.monthly_price);
+  setStatus(
+    `人数=${plan.seat_limit} / ナレッジ=${plan.knowledge_count} / 月額=${yen(plan.monthly_price)}`,
+    "ok"
+  );
+  kpiBase.textContent = yen(plan.base_fee);
   kpiMonthly.textContent = yen(plan.monthly_price);
   btnSave.disabled = false;
 }
@@ -180,7 +201,7 @@ async function saveContract(currentUser, pricing) {
     if (!seatRaw || !knowRaw) throw new Error("人数とナレッジ数を選択してください。");
 
     const plan = findPlan(pricing, Number(seatRaw), Number(knowRaw));
-    if (!plan) throw new Error("プランが確定できません（組み合わせが一致しません）。");
+    if (!plan) throw new Error("料金が確定できません。");
 
     const note = clampNote(noteEl.value || "");
 
@@ -189,6 +210,7 @@ async function saveContract(currentUser, pricing) {
       body: {
         account_id: accountId,
         tenant_id: tenantId,
+        // plan_id はあってもなくても良い（tenant.jsonに保存したければ使う）
         plan_id: plan.plan_id,
         seat_limit: plan.seat_limit,
         knowledge_count: plan.knowledge_count,
@@ -231,7 +253,6 @@ async function markPaid(currentUser) {
 
   if (tab !== "contract") return;
 
-  // ★ pricing 取得（失敗したら理由を表示）
   let pricingRaw;
   try {
     pricingRaw = await apiFetch(currentUser, "/v1/pricing", { method: "GET" });
@@ -242,9 +263,9 @@ async function markPaid(currentUser) {
 
   const pricing = normalizePricing(pricingRaw);
 
-  // ★ ここで plans が空なら、その内容を表示（原因切り分け）
-  if (!pricing.plans.length) {
-    setStatus("pricing.plans が空です: " + JSON.stringify(pricingRaw), "err");
+  // seats / knowledge_count が取れていない場合にだけ止める
+  if (!pricing.seats.length || !pricing.knowledge_count.length) {
+    setStatus("pricingの形式が不正です: " + JSON.stringify(pricingRaw), "err");
     return;
   }
 
@@ -257,7 +278,6 @@ async function markPaid(currentUser) {
     if (t?.knowledge_count != null) knowSel.value = String(t.knowledge_count);
     if (t?.note) noteEl.value = t.note;
   } catch (e) {
-    // tenant取得失敗は表示して止める（価格選択の前提なので）
     setStatus("tenant取得に失敗: " + (e?.message || String(e)), "err");
     return;
   }
