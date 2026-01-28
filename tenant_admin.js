@@ -331,4 +331,16 @@ async function markPaid(currentUser) {
     const t = await loadTenant(currentUser);
     if (t?.seat_limit != null) seatSel.value = String(t.seat_limit);
     if (t?.knowledge_count != null) knowSel.value = String(t.knowledge_count);
-    if (t?.note) note
+    if (t?.note) noteEl.value = t.note;
+  } catch (e) {
+    setStatus("tenant取得に失敗: " + (e?.message || String(e)), "err");
+    return;
+  }
+
+  renderEstimate(pricing);
+  seatSel.addEventListener("change", () => renderEstimate(pricing));
+  knowSel.addEventListener("change", () => renderEstimate(pricing));
+
+  btnSave.addEventListener("click", () => saveContract(currentUser, pricing));
+  btnPayDummy.addEventListener("click", () => markPaid(currentUser));
+})();
