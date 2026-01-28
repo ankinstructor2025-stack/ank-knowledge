@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin: 0; background: #fafafa; }
-    .wrap { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+    .wrap { max-width: 980px; margin: 32px auto; padding: 0 16px; }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,.04); margin-bottom: 16px; }
     h1 { margin:0 0 10px; font-size:20px; }
     h2 { margin: 0 0 10px; font-size: 16px; }
@@ -15,7 +15,7 @@
     label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
     select, textarea, input { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; box-sizing:border-box; background:#fff; }
     textarea { min-height:88px; resize:vertical; }
-    .toolbar { display:flex; gap:10px; align-items:center; margin-top:16px; }
+    .toolbar { display:flex; gap:10px; align-items:center; margin-top:16px; flex-wrap: wrap; }
     button { padding:10px 14px; border:1px solid #d1d5db; background:#fff; border-radius:10px; cursor:pointer; }
     button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -27,6 +27,15 @@
     .status.ok { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
     .status.error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:8px; margin-top: 10px; flex-wrap: wrap; }
+    .tab-btn { border:1px solid #e5e7eb; background:#fff; padding:8px 12px; border-radius:999px; font-size:13px; }
+    .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
+    .tab-btn[aria-disabled="true"] { opacity:.5; cursor:not-allowed; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .hint { margin-top: 8px; color:#6b7280; font-size: 13px; }
     @media (max-width: 720px){ .row{grid-template-columns:1fr;} .kpi{grid-template-columns:1fr;} }
   </style>
 </head>
@@ -44,9 +53,17 @@
         <div><strong>契約状態:</strong> <span id="contractStatus"></span></div>
         <div><strong>支払い設定:</strong> <span id="paymentStatus"></span></div>
       </div>
+
+      <div class="tabs" role="tablist" aria-label="Tenant tabs" style="margin-top:16px;">
+        <button class="tab-btn active" id="tabContract" role="tab" aria-selected="true" data-tab="contract">契約</button>
+        <button class="tab-btn" id="tabUsers" role="tab" aria-selected="false" data-tab="users">ユーザー管理</button>
+        <button class="tab-btn" id="tabKnowledge" role="tab" aria-selected="false" data-tab="knowledge">ナレッジ管理</button>
+      </div>
+      <div class="hint" id="tabHint"></div>
     </div>
 
-    <div class="card">
+    <!-- Contract tab -->
+    <div class="card tab-panel active" id="panelContract" data-panel="contract">
       <h2>契約内容</h2>
       <div class="muted">テナント＝契約（1対1）。ここでプランを確定してから利用機能を解放します。</div>
 
@@ -90,8 +107,30 @@
 
       <div id="status" class="status"></div>
       <div class="muted" style="margin-top:10px;">
-        ※ 支払い設定はあとでStripe等に置換。いまは「完了扱い」フラグのみ。
+        ※ 支払い設定はあとでStripe等に置換。いまは「完了扱いフラグ」のみ。
       </div>
+    </div>
+
+    <!-- Users tab -->
+    <div class="card tab-panel" id="panelUsers" data-panel="users">
+      <h2>ユーザー管理</h2>
+      <div class="muted">契約が確定（active）になったら利用できます。</div>
+      <div class="toolbar" style="margin-top:12px;">
+        <button id="btnInvite" disabled>招待を作成（後で）</button>
+        <button id="btnMembersReload" disabled>再読み込み（後で）</button>
+      </div>
+      <div class="muted" style="margin-top:10px;">ここは次に実装する場所。</div>
+    </div>
+
+    <!-- Knowledge tab -->
+    <div class="card tab-panel" id="panelKnowledge" data-panel="knowledge">
+      <h2>ナレッジ管理</h2>
+      <div class="muted">契約が確定（active）になったら利用できます。</div>
+      <div class="toolbar" style="margin-top:12px;">
+        <button id="btnUpload" disabled>アップロード（後で）</button>
+        <button id="btnBuild" disabled>ナレッジ生成（後で）</button>
+      </div>
+      <div class="muted" style="margin-top:10px;">ここは次に実装する場所。</div>
     </div>
 
     <div class="card">
@@ -99,7 +138,6 @@
       <div class="muted">契約が確定（active）になったら利用を解放します。</div>
       <div class="toolbar">
         <button id="btnSearch">QA検索へ</button>
-        <button id="btnUserAdmin">ユーザー管理（後で）</button>
       </div>
     </div>
 

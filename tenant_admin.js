@@ -33,6 +33,21 @@ const btnUserAdmin = document.getElementById("btnUserAdmin");
 
 const statusEl = document.getElementById("status");
 
+const tabHint = document.getElementById("tabHint");
+const tabContract = document.getElementById("tabContract");
+const tabUsers = document.getElementById("tabUsers");
+const tabKnowledge = document.getElementById("tabKnowledge");
+
+const panelContract = document.getElementById("panelContract");
+const panelUsers = document.getElementById("panelUsers");
+const panelKnowledge = document.getElementById("panelKnowledge");
+
+// Users/Knowledge 内のボタン（将来用）
+const btnInvite = document.getElementById("btnInvite");
+const btnMembersReload = document.getElementById("btnMembersReload");
+const btnUpload = document.getElementById("btnUpload");
+const btnBuild = document.getElementById("btnBuild");
+
 function yen(n) {
   if (n == null || Number.isNaN(Number(n))) return "-";
   return Number(n).toLocaleString("ja-JP") + "円";
@@ -159,6 +174,40 @@ function applyTenantToUI() {
   btnUserAdmin.disabled = !canUse;
 }
 
+function activateTab(name) {
+  const tabs = [
+    { btn: tabContract, panel: panelContract, key: "contract" },
+    { btn: tabUsers, panel: panelUsers, key: "users" },
+    { btn: tabKnowledge, panel: panelKnowledge, key: "knowledge" },
+  ];
+
+  for (const t of tabs) {
+    const active = (t.key === name);
+    t.btn.classList.toggle("active", active);
+    t.btn.setAttribute("aria-selected", active ? "true" : "false");
+    t.panel.classList.toggle("active", active);
+  }
+}
+
+function applyTabPolicy() {
+  const cs = tenant?.contract_status || "draft";
+  const canManage = (cs === "active");
+
+  // disabled 表示（ボタンとして押せない）
+  tabUsers.setAttribute("aria-disabled", canManage ? "false" : "true");
+  tabKnowledge.setAttribute("aria-disabled", canManage ? "false" : "true");
+
+  // Users/Knowledge 内の操作もまとめて無効化
+  if (btnInvite) btnInvite.disabled = !canManage;
+  if (btnMembersReload) btnMembersReload.disabled = !canManage;
+  if (btnUpload) btnUpload.disabled = !canManage;
+  if (btnBuild) btnBuild.disabled = !canManage;
+
+  tabHint.textContent = canManage
+    ? ""
+    : "契約が未確定です。契約タブで「契約を確定（保存）」を実行すると、ユーザー管理・ナレッジ管理が利用できます。";
+}
+
 async function loadTenant(currentUser) {
   // 既に作った GET /v1/tenant を使う想定
   const res = await apiFetch(currentUser,
@@ -167,6 +216,7 @@ async function loadTenant(currentUser) {
   );
   tenant = res;
   applyTenantToUI();
+  applyTabPolicy();
 
   // 既存値をフォームへ
   if (tenant.seat_limit != null) seatSel.value = String(tenant.seat_limit);
@@ -280,4 +330,16 @@ btnSearch.addEventListener("click", () => {
 
 btnUserAdmin.addEventListener("click", () => {
   alert("ユーザー管理は後で追加");
+});
+
+tabContract.addEventListener("click", () => activateTab("contract"));
+
+tabUsers.addEventListener("click", () => {
+  if (tabUsers.getAttribute("aria-disabled") === "true") return;
+  activateTab("users");
+});
+
+tabKnowledge.addEventListener("click", () => {
+  if (tabKnowledge.getAttribute("aria-disabled") === "true") return;
+  activateTab("knowledge");
 });
