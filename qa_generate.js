@@ -10,19 +10,38 @@ const accountId = (qs.get("account_id") || "").trim();
 const metaLine = document.getElementById("metaLine");
 const backBtn = document.getElementById("backBtn");
 
-const inputText = document.getElementById("inputText");
+const fileInput = document.getElementById("fileInput");
 const formatSel = document.getElementById("formatSel");
-const titleInput = document.getElementById("titleInput");
 
-const btnGenerate = document.getElementById("btnGenerate");
-const btnReload = document.getElementById("btnReload");
+const btnUploadAndGenerate = document.getElementById("btnUploadAndGenerate");
+const btnDownload = document.getElementById("btnDownload");
 
 const kpiState = document.getElementById("kpiState");
+const kpiSource = document.getElementById("kpiSource");
 const kpiCount = document.getElementById("kpiCount");
-const kpiJob = document.getElementById("kpiJob");
 
 const statusEl = document.getElementById("status");
-const historyBody = document.getElementById("historyBody");
+
+/**
+ * ★ここだけあなたの既存APIに合わせて差し替え
+ * 1) 署名URLを発行するAPI（あなたが以前作って動かしたやつ）
+ *    例: POST /v1/admin/upload-url
+ *
+ * 2) アップロード済みsource_keyでQA抽出を実行するAPI（既存のQA抽出）
+ *    例: POST /v1/knowledge/qa-generate-from-source
+ *
+ * 返却形式は下のコメントに合わせればOK。
+ */
+const API_UPLOAD_URL = "/v1/admin/upload-url";
+const API_QA_FROM_SOURCE = "/v1/exports/qa-from-source"; // ←無ければあなたの既存QA抽出APIに変える
+
+// 1KB未満NG
+const MIN_BYTES = 1024;
+// 許可拡張子（最低限）
+const ALLOW_EXT = [".txt", ".csv", ".json"];
+
+let lastResult = null;   // ダウンロード用
+let lastSourceKey = "";  // 表示用
 
 function setStatus(msg, type = "") {
   statusEl.className = "status " + (type || "");
@@ -30,14 +49,21 @@ function setStatus(msg, type = "") {
   statusEl.style.display = msg ? "block" : "none";
 }
 
-function setKpi(state, count, job) {
+function setKpi(state, sourceKey, count) {
   kpiState.textContent = state ?? "-";
+  kpiSource.textContent = sourceKey || "-";
   kpiCount.textContent = (count == null ? "-" : String(count));
-  kpiJob.textContent = job ?? "-";
 }
 
-function dlText(filename, text, mime = "application/json") {
-  const blob = new Blob([text], { type: mime + ";charset=utf-8" });
+function extOf(name) {
+  const n = String(name || "").toLowerCase();
+  const i = n.lastIndexOf(".");
+  return i >= 0 ? n.slice(i) : "";
+}
+
+function dlJson(filename, obj) {
+  const text = JSON.stringify(obj, null, 2);
+  const blob = new Blob([text], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -48,201 +74,149 @@ function dlText(filename, text, mime = "application/json") {
   URL.revokeObjectURL(url);
 }
 
-async function getTenant(currentUser) {
-  return await apiFetch(
-    currentUser,
-    `/v1/tenant?tenant_id=${encodeURIComponent(tenantId)}&account_id=${encodeURIComponent(accountId)}`,
-    { method: "GET" }
-  );
+/**
+ * 署名URLを発行してもらう
+ * 期待する返却（どれか）：
+ *   { upload_url, source_key }
+ *   { upload_url, object_key }  ← object_keyをsource_keyとして扱う
+ */
+async function requestUploadUrl(currentUser, file) {
+  const body = {
+    account_id: accountId,
+    tenant_id: tenantId,
+    filename: file.name,
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size
+  };
+  return await apiFetch(currentUser, API_UPLOAD_URL, { method: "POST", body });
 }
 
-// 生成：GCSに保存して job_id を返す想定
-async function generateExport(currentUser, payload) {
-  return await apiFetch(currentUser, "/v1/exports/qa-generate", {
-    method: "POST",
-    body: payload
+/**
+ * 署名URLへPUT
+ */
+async function putToSignedUrl(uploadUrl, file) {
+  const res = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream"
+    },
+    body: file
   });
-}
 
-async function listExports(currentUser) {
-  return await apiFetch(
-    currentUser,
-    `/v1/exports?account_id=${encodeURIComponent(accountId)}&tenant_id=${encodeURIComponent(tenantId)}`,
-    { method: "GET" }
-  );
-}
-
-async function getExport(currentUser, jobId) {
-  return await apiFetch(
-    currentUser,
-    `/v1/exports/${encodeURIComponent(jobId)}?account_id=${encodeURIComponent(accountId)}&tenant_id=${encodeURIComponent(tenantId)}`,
-    { method: "GET" }
-  );
-}
-
-function fmtTs(s) {
-  if (!s) return "-";
-  // ISOっぽいならそのまま表示（厳密変換はしない）
-  return String(s).replace("T", " ").replace("Z", "");
-}
-
-function clearHistory(msg = "読み込み中...") {
-  historyBody.innerHTML = "";
-  const tr = document.createElement("tr");
-  const td = document.createElement("td");
-  td.colSpan = 4;
-  td.className = "muted";
-  td.textContent = msg;
-  tr.appendChild(td);
-  historyBody.appendChild(tr);
-}
-
-function renderHistoryRows(currentUser, exportsList) {
-  historyBody.innerHTML = "";
-  if (!exportsList.length) {
-    clearHistory("履歴はありません。");
-    return;
-  }
-
-  for (const x of exportsList) {
-    const tr = document.createElement("tr");
-
-    const tdTime = document.createElement("td");
-    tdTime.textContent = fmtTs(x.created_at);
-    tr.appendChild(tdTime);
-
-    const tdCount = document.createElement("td");
-    tdCount.textContent = (x.qa_count == null ? "-" : String(x.qa_count));
-    tr.appendChild(tdCount);
-
-    const tdJob = document.createElement("td");
-    tdJob.textContent = x.job_id || "-";
-    tr.appendChild(tdJob);
-
-    const tdAct = document.createElement("td");
-    tdAct.style.display = "flex";
-    tdAct.style.gap = "8px";
-    tdAct.style.flexWrap = "wrap";
-
-    const btnJson = document.createElement("button");
-    btnJson.textContent = "JSONを取得";
-    btnJson.onclick = async () => {
-      try {
-        setStatus("", "");
-        const res = await getExport(currentUser, x.job_id);
-        const text = JSON.stringify(res, null, 2);
-        dlText(`qa_${x.job_id}.json`, text, "application/json");
-      } catch (e) {
-        console.error(e);
-        setStatus(e?.message || String(e), "err");
-      }
-    };
-
-    const btnCopy = document.createElement("button");
-    btnCopy.textContent = "job_idをコピー";
-    btnCopy.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(String(x.job_id || ""));
-        setStatus("コピーしました。", "ok");
-      } catch {
-        setStatus("コピーに失敗しました。", "err");
-      }
-    };
-
-    tdAct.appendChild(btnJson);
-    tdAct.appendChild(btnCopy);
-    tr.appendChild(tdAct);
-
-    historyBody.appendChild(tr);
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`upload failed: ${res.status} ${t}`);
   }
 }
 
-async function reloadHistory(currentUser) {
-  try {
-    clearHistory("読み込み中...");
-    const res = await listExports(currentUser);
-    const arr = Array.isArray(res?.exports) ? res.exports : [];
-    renderHistoryRows(currentUser, arr);
-  } catch (e) {
-    console.error(e);
-    clearHistory("履歴の取得に失敗しました。");
-    setStatus(e?.message || String(e), "err");
+/**
+ * アップロード済みsource_keyでQA抽出を実行する
+ * 期待する返却（例）：
+ *   { items: [{question,answer}, ...], qa_count: N }
+ *   または { qa_count, items } など
+ */
+async function generateQaFromSource(currentUser, sourceKey, format) {
+  const body = {
+    account_id: accountId,
+    tenant_id: tenantId,
+    source_key: sourceKey,
+    format: format || "json"
+  };
+  return await apiFetch(currentUser, API_QA_FROM_SOURCE, { method: "POST", body });
+}
+
+function extractSourceKey(uploadResp) {
+  const u = uploadResp || {};
+  const sk = (u.source_key || u.object_key || "").trim();
+  if (!sk) {
+    throw new Error("upload-url response missing source_key/object_key");
   }
+  const url = (u.upload_url || "").trim();
+  if (!url) {
+    throw new Error("upload-url response missing upload_url");
+  }
+  return { uploadUrl: url, sourceKey: sk };
+}
+
+function extractItems(resp) {
+  if (!resp || typeof resp !== "object") return { items: [], count: 0 };
+  const items = Array.isArray(resp.items) ? resp.items : [];
+  const count = (resp.qa_count != null) ? Number(resp.qa_count) : items.length;
+  return { items, count };
 }
 
 async function boot() {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
   metaLine.textContent = `tenant_id=${tenantId} / account_id=${accountId}`;
-
   backBtn.onclick = () => {
     location.href = `./tenants.html?account_id=${encodeURIComponent(accountId)}`;
   };
 
-  // プランチェック（QAのみ以外で来た場合のガード）
-  try {
-    const tenant = await getTenant(currentUser);
-    const planId = (tenant?.plan_id || "").trim();
-    if (planId && planId !== "basic") {
-      setStatus("この画面はQA作成のみプラン向けです。契約画面へ戻ります。", "err");
-      // 迷子防止：数秒後に戻す
-      setTimeout(() => {
-        location.href =
-          `./tenant_admin.html?tenant_id=${encodeURIComponent(tenantId)}` +
-          `&account_id=${encodeURIComponent(accountId)}` +
-          `&tab=contract`;
-      }, 1200);
-      return;
-    }
-  } catch (e) {
-    // tenant取得できない場合は動けない
-    setStatus(e?.message || String(e), "err");
-    return;
-  }
+  setStatus("", "");
+  setKpi("-", "", "-");
 
-  setKpi("-", "-", "-");
-  await reloadHistory(currentUser);
+  btnDownload.onclick = () => {
+    if (!lastResult) return;
+    dlJson("qa_result.json", lastResult);
+  };
 
-  btnReload.onclick = () => reloadHistory(currentUser);
-
-  btnGenerate.onclick = async () => {
+  btnUploadAndGenerate.onclick = async () => {
     setStatus("", "");
-    const text = (inputText.value || "").trim();
-    const fmt = (formatSel.value || "json").trim();
-    const title = (titleInput.value || "").trim();
+    lastResult = null;
+    lastSourceKey = "";
+    btnDownload.disabled = true;
 
-    if (!text) {
-      setStatus("入力テキストが空です。", "err");
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      setStatus("ファイルを選択してください。", "err");
       return;
     }
 
-    // 連打防止
-    btnGenerate.disabled = true;
-    setKpi("実行中", "-", "-");
+    // クライアント側の事故防止
+    if (file.size < MIN_BYTES) {
+      setStatus("1KB未満のファイルは対象外です。", "err");
+      return;
+    }
+    const ext = extOf(file.name);
+    if (!ALLOW_EXT.includes(ext)) {
+      setStatus(`対象外の拡張子です: ${ext}`, "err");
+      return;
+    }
+
+    btnUploadAndGenerate.disabled = true;
+    setKpi("アップロード準備", "", "-");
 
     try {
-      const res = await generateExport(currentUser, {
-        account_id: accountId,
-        tenant_id: tenantId,
-        input_text: text,
-        format: fmt,
-        title: title
-      });
+      // 1) 署名URL発行
+      const uploadResp = await requestUploadUrl(currentUser, file);
+      const { uploadUrl, sourceKey } = extractSourceKey(uploadResp);
 
-      const jobId = res?.job_id || "";
-      const count = res?.qa_count;
+      setKpi("アップロード中", sourceKey, "-");
 
-      setKpi("完了", count ?? "-", jobId || "-");
-      setStatus("保存しました。履歴から再ダウンロードできます。", "ok");
+      // 2) PUTアップロード
+      await putToSignedUrl(uploadUrl, file);
 
-      // 履歴再取得
-      await reloadHistory(currentUser);
+      setKpi("QA作成中", sourceKey, "-");
+
+      // 3) QA抽出（既存ロジックに接続する）
+      const fmt = (formatSel.value || "json").trim();
+      const qaResp = await generateQaFromSource(currentUser, sourceKey, fmt);
+      const { items, count } = extractItems(qaResp);
+
+      lastResult = qaResp;      // そのままダウンロード
+      lastSourceKey = sourceKey;
+
+      setKpi("完了", sourceKey, count);
+      setStatus("QAを作成しました。結果をダウンロードできます。", "ok");
+      btnDownload.disabled = false;
+
     } catch (e) {
       console.error(e);
-      setKpi("失敗", "-", "-");
+      setKpi("失敗", lastSourceKey, "-");
       setStatus(e?.message || String(e), "err");
     } finally {
-      btnGenerate.disabled = false;
+      btnUploadAndGenerate.disabled = false;
     }
   };
 }

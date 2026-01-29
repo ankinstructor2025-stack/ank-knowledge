@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>QA作成（ダウンロード）</title>
+  <title>QA作成（ファイルから）</title>
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI","Noto Sans JP", sans-serif; margin:0; background:#fafafa; color:#111827; }
     .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
@@ -11,25 +11,21 @@
     h1 { margin:0 0 8px; font-size:18px; }
     h2 { margin:0 0 10px; font-size:15px; }
     .muted { color:#6b7280; font-size:13px; line-height:1.6; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top: 10px; }
-    label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
-    textarea, input, select { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
-    textarea { min-height: 220px; resize: vertical; }
     .tabs { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .spacer { flex:1; }
     button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; font-weight:700; }
     button.primary { background:#1f7a39; border-color:#1f7a39; color:#fff; }
     button:disabled { opacity:.55; cursor:not-allowed; }
-    .spacer { flex:1; }
+    input, select { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
+    label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top: 10px; }
     .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
     .kpi .box { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
     .kpi .title { font-size:12px; color:#6b7280; }
-    .kpi .val { margin-top:6px; font-size:14px; font-weight:800; }
+    .kpi .val { margin-top:6px; font-size:14px; font-weight:800; word-break: break-all; }
     .status { display:none; margin-top:12px; padding:10px 12px; border-radius:10px; font-size:13px; white-space:pre-wrap; }
     .status.ok { display:block; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
     .status.err { display:block; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom: 1px solid #eee; padding:10px 8px; font-size:13px; text-align:left; }
-    th { color:#6b7280; font-weight:700; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:12px; color:#6b7280; }
     @media (max-width: 820px){
       .row { grid-template-columns: 1fr; }
@@ -42,47 +38,43 @@
 
     <div class="card">
       <div class="tabs">
-        <h1 style="margin:0;">QA作成（ダウンロード）</h1>
+        <h1 style="margin:0;">QA作成（ファイルから）</h1>
         <div class="spacer"></div>
         <button id="backBtn" type="button">テナント一覧へ</button>
       </div>
       <div class="muted" id="metaLine" style="margin-top:6px;"></div>
       <div class="muted" style="margin-top:8px;">
-        ・この画面は「QA作成のみプラン」向けです。<br>
-        ・生成結果はサーバ側に保存し、<strong>30日間</strong>再ダウンロードできます。<br>
-        ・保持期間を過ぎた生成結果は自動的に削除されます。<br>
+        ・入力は<strong>ファイルのみ</strong>です（コピペ／手入力は扱いません）。<br>
+        ・<strong>1KB未満のファイルは対象外</strong>です。<br>
+        ・対象：<code>.txt</code> / <code>.csv</code> / <code>.json</code>（必要なら追加）<br>
       </div>
     </div>
 
     <div class="card">
-      <h2>入力</h2>
-      <div class="muted">対話ログや文章を貼り付けてください（テキストのみ）。</div>
-      <div style="margin-top:10px;">
-        <label for="inputText">入力テキスト</label>
-        <textarea id="inputText" placeholder="ここに貼り付け"></textarea>
-      </div>
+      <h2>ファイル選択</h2>
 
       <div class="row">
         <div>
+          <label for="fileInput">入力ファイル</label>
+          <input id="fileInput" type="file" accept=".txt,.csv,.json,text/plain,application/json,text/csv" />
+          <div class="muted" style="margin-top:6px;">※ 1KB未満はアップロードしません。</div>
+        </div>
+
+        <div>
           <label for="formatSel">出力形式</label>
           <select id="formatSel">
-            <option value="json">JSON（items配列）</option>
-            <option value="jsonl">JSONL（1行1QA）</option>
-            <option value="csv">CSV（question/answer）</option>
+            <option value="json">JSON</option>
+            <option value="jsonl">JSONL</option>
+            <option value="csv">CSV</option>
           </select>
-          <div class="muted" style="margin-top:6px;">※実装に合わせて有効になる形式だけ返してください。</div>
-        </div>
-        <div>
-          <label for="titleInput">タイトル（任意）</label>
-          <input id="titleInput" maxlength="80" placeholder="例：顧客A 問い合わせログ 2026-01" />
-          <div class="muted" style="margin-top:6px;">※metaに保存する用途。</div>
+          <div class="muted" style="margin-top:6px;">※ 返せない形式はサーバ側で弾いてOK。</div>
         </div>
       </div>
 
       <div class="tabs" style="margin-top:12px;">
-        <button id="btnGenerate" class="primary" type="button">QAを作成して保存</button>
+        <button id="btnUploadAndGenerate" class="primary" type="button">アップロードしてQA作成</button>
         <div class="spacer"></div>
-        <div class="muted">※ 保存後にダウンロードできます</div>
+        <button id="btnDownload" type="button" disabled>結果をダウンロード</button>
       </div>
 
       <div class="kpi">
@@ -91,41 +83,16 @@
           <div class="val" id="kpiState">-</div>
         </div>
         <div class="box">
-          <div class="title">直近の件数</div>
-          <div class="val" id="kpiCount">-</div>
+          <div class="title">source_key</div>
+          <div class="val" id="kpiSource">-</div>
         </div>
         <div class="box">
-          <div class="title">直近のjob_id</div>
-          <div class="val" id="kpiJob">-</div>
+          <div class="title">件数</div>
+          <div class="val" id="kpiCount">-</div>
         </div>
       </div>
 
       <div id="status" class="status"></div>
-    </div>
-
-    <div class="card">
-      <div class="tabs">
-        <h2 style="margin:0;">生成履歴（30日）</h2>
-        <div class="spacer"></div>
-        <button id="btnReload" type="button">再読み込み</button>
-      </div>
-      <div class="muted" style="margin-top:6px;">生成した結果はここから再ダウンロードできます。</div>
-
-      <div style="margin-top:10px; overflow:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th style="min-width:160px;">作成日時</th>
-              <th style="min-width:80px;">件数</th>
-              <th>job_id</th>
-              <th style="min-width:180px;">操作</th>
-            </tr>
-          </thead>
-          <tbody id="historyBody">
-            <tr><td colspan="4" class="muted">読み込み中...</td></tr>
-          </tbody>
-        </table>
-      </div>
     </div>
 
   </div>
