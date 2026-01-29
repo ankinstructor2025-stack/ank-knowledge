@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>テナント管理</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI","Noto Sans JP", sans-serif; margin:0; background:#fafafa; }
+    body { font-family: system-ui, -apple-system, "Segoe UI","Noto Sans JP", sans-serif; margin:0; background:#fafafa; color:#111827; }
     .wrap { max-width: 980px; margin: 32px auto; padding: 0 16px; }
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,.04); margin-bottom: 16px; }
     h1 { margin:0 0 10px; font-size:20px; }
@@ -15,19 +15,32 @@
     button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
     button:disabled { opacity:.55; cursor:not-allowed; }
     .spacer { flex:1; }
+
     .row { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:14px; }
     label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
     select, textarea { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
     textarea { min-height: 88px; resize: vertical; }
+
     .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:14px; }
     .kpi .box { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
     .kpi .title { font-size:12px; color:#6b7280; }
     .kpi .val { margin-top:6px; font-size:16px; font-weight:700; }
+
     .status { display:none; margin-top:12px; padding:10px 12px; border-radius:10px; font-size:14px; white-space:pre-wrap; }
     .status.ok { display:block; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
     .status.err { display:block; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+
     .hint { margin-top:10px; font-size:12px; color:#6b7280; line-height:1.6; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:12px; color:#6b7280; }
+
+    /* ★ plans.jsonカード用 */
+    .planNote { margin-top: 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:12px; line-height:1.7; }
+    .planNote strong { font-weight: 800; }
+    #plansGrid { margin-top: 14px; }
+
+    /* 旧pricing UIは残すが非表示（JSでも隠すが保険） */
+    .legacyPricing { display:none; }
+
     @media (max-width: 780px){
       .row { grid-template-columns: 1fr; }
       .kpi { grid-template-columns: 1fr; }
@@ -55,15 +68,27 @@
       <h2 style="margin:0 0 8px; font-size:16px;">契約内容</h2>
       <div class="muted">支払い前は修正可能、支払い設定完了後は変更不可。</div>
 
-      <div class="row">
-        <div>
-          <label for="seatLimitSelect">人数（seat_limit）</label>
-          <select id="seatLimitSelect" disabled></select>
-        </div>
+      <!-- ★ 誤解防止の注釈 -->
+      <div class="planNote">
+        <div><strong>QA生成</strong>は、プランに含まれる回数を超える場合は<strong>都度課金</strong>です。</div>
+        <div>保持できるQAセットは最大<strong>5</strong>、検索で使えるQAセットは<strong>1</strong>です。</div>
+      </div>
 
-        <div>
-          <label for="knowledgeCountSelect">ナレッジ数（knowledge_count）</label>
-          <select id="knowledgeCountSelect" disabled></select>
+      <!-- ★ plans.json から作るプラン一覧 -->
+      <div id="plansGrid"></div>
+
+      <!-- 旧pricing UI（互換のため残すが非表示） -->
+      <div class="legacyPricing">
+        <div class="row">
+          <div>
+            <label for="seatLimitSelect">人数（seat_limit）</label>
+            <select id="seatLimitSelect" disabled></select>
+          </div>
+
+          <div>
+            <label for="knowledgeCountSelect">ナレッジ数（knowledge_count）</label>
+            <select id="knowledgeCountSelect" disabled></select>
+          </div>
         </div>
       </div>
 
@@ -90,7 +115,9 @@
       <div class="tabs" style="margin-top:16px;">
         <button id="btnPayDummy" type="button">支払い設定完了（仮）</button>
         <div class="spacer"></div>
-        <button id="btnSave" class="primary" type="button" disabled>契約を保存</button>
+
+        <!-- 旧「契約を保存」ボタンは残すが非表示（JSでも消す） -->
+        <button id="btnSave" class="primary legacyPricing" type="button" disabled>契約を保存</button>
       </div>
 
       <div class="hint">

@@ -19,17 +19,22 @@ const panelContract = document.getElementById("panelContract");
 const panelUsers = document.getElementById("panelUsers");
 const panelKnowledge = document.getElementById("panelKnowledge");
 
+// 旧UI（pricing前提）- 存在しても使わない（壊さないために残す）
 const seatSel = document.getElementById("seatLimitSelect");
 const knowSel = document.getElementById("knowledgeCountSelect");
+
 const noteEl = document.getElementById("note");
 
 const kpiBase = document.getElementById("kpiBase");
-const kpiExtra = document.getElementById("kpiExtra"); // HTMLに存在する
+const kpiExtra = document.getElementById("kpiExtra");
 const kpiMonthly = document.getElementById("kpiMonthly");
 
-const btnSave = document.getElementById("btnSave");
+const btnSave = document.getElementById("btnSave");       // 旧保存ボタン（あれば無効化）
 const btnPayDummy = document.getElementById("btnPayDummy");
 const statusEl = document.getElementById("status");
+
+// ★ 新UI：plans.json表示先
+const plansGrid = document.getElementById("plansGrid");
 
 function showPanel(name) {
   panelContract.style.display = (name === "contract") ? "" : "none";
@@ -68,141 +73,6 @@ function clampNote(s) {
   return t.length <= 400 ? t : t.slice(0, 400);
 }
 
-/**
- * pricing:
- * - 旧形式（JSが元々想定）:
- *   seats: [{seat_limit, monthly_fee, label}]
- *   knowledge_count: [{value, monthly_price, label}]
- *
- * - 新形式（あなたのpricing.json）:
- *   seats: [5,10,30]
- *   knowledge_count: [1,2,3,4,5]
- *   knowledge_add_price: 50000
- */
-function normalizePricing(p) {
-  const currency = (p?.currency || "JPY").toString();
-  const notes = p?.notes || {};
-
-  // seats: 新形式 [5,10,30] / 旧形式 [{seat_limit, monthly_fee, label}]
-  const seatsRaw = Array.isArray(p?.seats) ? p.seats : [];
-  const seats = (typeof seatsRaw[0] === "number")
-    ? seatsRaw
-        .map(v => ({ seat_limit: Number(v), monthly_fee: 0, label: "" }))
-        .filter(x => Number.isFinite(x.seat_limit))
-        .sort((a, b) => a.seat_limit - b.seat_limit)
-    : seatsRaw
-        .map(x => ({
-          seat_limit: Number(x?.seat_limit),
-          monthly_fee: Number(x?.monthly_fee),
-          label: String(x?.label || "")
-        }))
-        .filter(x => Number.isFinite(x.seat_limit) && Number.isFinite(x.monthly_fee))
-        .sort((a, b) => a.seat_limit - b.seat_limit);
-
-  // knowledge_count: 新形式 [1..5] / 旧形式 [{value, monthly_price, label}]
-  const kcRaw = Array.isArray(p?.knowledge_count) ? p.knowledge_count : [];
-  const add = Number(p?.knowledge_add_price || 0);
-
-  const knowledge_count = (typeof kcRaw[0] === "number")
-    ? kcRaw
-        .map(v => {
-          const vv = Number(v);
-          const monthly_price =
-            (vv > 1 && Number.isFinite(add)) ? (vv - 1) * add : 0;
-          return { value: vv, monthly_price, label: String(vv) };
-        })
-        .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
-        .sort((a, b) => a.value - b.value)
-    : kcRaw
-        .map(x => ({
-          value: Number(x?.value),
-          monthly_price: Number(x?.monthly_price || 0),
-          label: String(x?.label || x?.value || "")
-        }))
-        .filter(x => Number.isFinite(x.value) && Number.isFinite(x.monthly_price))
-        .sort((a, b) => a.value - b.value);
-
-  // seats×knowledge を plans に展開（既存ロジック互換）
-  const plans = [];
-  for (const s of seats) {
-    for (const k of knowledge_count) {
-      plans.push({
-        plan_id: `seat${s.seat_limit}_kc${k.value}`,
-        label: s.label || "",
-        seat_limit: s.seat_limit,
-        knowledge_count: k.value,
-        monthly_price:
-          (Number(s.monthly_fee) || 0) + (Number(k.monthly_price) || 0),
-        base_fee: Number(s.monthly_fee) || 0,
-        extra_fee: Number(k.monthly_price) || 0,
-      });
-    }
-  }
-
-  return { currency, notes, seats, knowledge_count, plans };
-}
-
-function fillSelectsFromPlans(pricing) {
-  seatSel.innerHTML = "";
-  knowSel.innerHTML = "";
-
-  seatSel.appendChild(new Option("選択してください", ""));
-  knowSel.appendChild(new Option("選択してください", ""));
-
-  for (const s of pricing.seats) {
-    seatSel.appendChild(new Option(`${s.seat_limit}人まで`, String(s.seat_limit)));
-  }
-
-  for (const k of pricing.knowledge_count) {
-    const extra = (k.monthly_price > 0) ? `（+${yen(k.monthly_price)}）` : "（基本料金に含む）";
-    const label = k.label ? `${k.label}${extra}` : `${k.value}${extra}`;
-    knowSel.appendChild(new Option(label, String(k.value)));
-  }
-
-  seatSel.disabled = false;
-  knowSel.disabled = false;
-}
-
-function findPlan(pricing, seatLimit, knowledgeCount) {
-  return pricing.plans.find(p =>
-    p.seat_limit === Number(seatLimit) &&
-    p.knowledge_count === Number(knowledgeCount)
-  ) || null;
-}
-
-function renderEstimate(pricing) {
-  const seatRaw = seatSel.value || "";
-  const knowRaw = knowSel.value || "";
-
-  if (!seatRaw || !knowRaw) {
-    kpiBase.textContent = "-";
-    if (kpiExtra) kpiExtra.textContent = "0円";
-    kpiMonthly.textContent = "-";
-    btnSave.disabled = true;
-    setStatus("", "");
-    return;
-  }
-
-  const plan = findPlan(pricing, Number(seatRaw), Number(knowRaw));
-  if (!plan) {
-    kpiBase.textContent = "-";
-    if (kpiExtra) kpiExtra.textContent = "0円";
-    kpiMonthly.textContent = "-";
-    btnSave.disabled = true;
-    setStatus("料金計算に失敗しました。", "err");
-    return;
-  }
-
-  setStatus(
-    `人数=${plan.seat_limit} / ナレッジ=${plan.knowledge_count} / 月額=${yen(plan.monthly_price)}`,
-    "ok"
-  );
-  kpiBase.textContent = yen(plan.base_fee);
-  if (kpiExtra) kpiExtra.textContent = yen(plan.extra_fee);
-  kpiMonthly.textContent = yen(plan.monthly_price);
-  btnSave.disabled = false;
-}
-
 async function loadTenant(currentUser) {
   return await apiFetch(
     currentUser,
@@ -211,42 +81,168 @@ async function loadTenant(currentUser) {
   );
 }
 
-async function saveContract(currentUser, pricing) {
-  btnSave.disabled = true;
+// plans.json を /v1/plans から取得する（あなたのAPIで /v1/pricing を plans.json に変えてるなら、ここを /v1/pricing にしてもOK）
+async function loadPlans(currentUser) {
+  return await apiFetch(currentUser, "/v1/plans", { method: "GET" });
+}
+
+// JSONの安全化
+function normalizePlans(raw) {
+  const currency = String(raw?.currency || "JPY");
+  const plans = Array.isArray(raw?.plans) ? raw.plans : [];
+  const limits = raw?.limits || {};
+  const dedup = raw?.dedup_thresholds || {};
+  return { currency, plans, limits, dedup };
+}
+
+// featuresの表示（UI用）
+function planFeatureLines(p) {
+  const f = p?.features || {};
+  const lines = [];
+
+  // QA生成回数（プランに含む回数）
+  const inc = Number(p?.included_qa_generations || 0);
+  if (inc > 0) lines.push(`QA生成：月${inc}回まで含む（超過は都度課金）`);
+  else lines.push("QA生成：都度課金");
+
+  if (f.qa_manage) lines.push("QAセット管理");
+  if (f.dedup) lines.push("重複整理（候補0.7 / 確定0.9）");
+  if (f.qa_search) lines.push("QA検索（一覧・類似）");
+  if (f.qa_summarize) lines.push("QA要約（TOP5を要点としてまとめる）");
+
+  return lines;
+}
+
+function setLegacyUiDisabled() {
+  // 旧pricing UIは使わないので、あれば無効化/非表示
+  if (seatSel) seatSel.style.display = "none";
+  if (knowSel) knowSel.style.display = "none";
+  if (btnSave) btnSave.style.display = "none";
+
+  // KPIは「月額表示」に流用できるので残す（表示だけ更新する）
+}
+
+function ensurePlansGrid() {
+  if (!plansGrid) {
+    throw new Error("tenant_admin.html に <div id=\"plansGrid\"></div> を追加してください。");
+  }
+}
+
+function clearGrid() {
+  plansGrid.innerHTML = "";
+}
+
+function makeCard(plan, currentPlanId, onSelect) {
+  const div = document.createElement("div");
+  div.style.background = "#fff";
+  div.style.border = "1px solid #e6e8ef";
+  div.style.borderRadius = "14px";
+  div.style.padding = "14px";
+  div.style.boxShadow = "0 1px 2px rgba(0,0,0,.04)";
+  div.style.display = "flex";
+  div.style.flexDirection = "column";
+  div.style.gap = "10px";
+
+  const top = document.createElement("div");
+  top.style.display = "flex";
+  top.style.justifyContent = "space-between";
+  top.style.alignItems = "center";
+  const label = document.createElement("div");
+  label.textContent = plan.label || plan.plan_id;
+  label.style.fontWeight = "800";
+  label.style.fontSize = "16px";
+  const pill = document.createElement("div");
+  pill.textContent = plan.plan_id;
+  pill.style.fontSize = "11px";
+  pill.style.padding = "3px 8px";
+  pill.style.borderRadius = "999px";
+  pill.style.border = "1px solid #dbe0ea";
+  pill.style.background = "#f3f5fb";
+  top.appendChild(label);
+  top.appendChild(pill);
+
+  const price = document.createElement("div");
+  const monthly = Number(plan.monthly_price || 0);
+  if (monthly === 0) {
+    // 誤解防止：0円でも“生成は都度課金”を明示
+    price.textContent = `月額 ¥0（QA生成は都度課金）`;
+  } else {
+    price.textContent = `月額 ${yen(monthly)}`;
+  }
+  price.style.fontSize = "14px";
+  price.style.color = "#333";
+
+  const ul = document.createElement("ul");
+  ul.style.margin = "0";
+  ul.style.paddingLeft = "18px";
+  ul.style.fontSize = "13px";
+  for (const s of planFeatureLines(plan)) {
+    const li = document.createElement("li");
+    li.textContent = s;
+    li.style.margin = "6px 0";
+    ul.appendChild(li);
+  }
+
+  if (Array.isArray(plan.notes) && plan.notes.length) {
+    const note = document.createElement("div");
+    note.textContent = plan.notes.join(" / ");
+    note.style.fontSize = "12px";
+    note.style.color = "#666";
+    note.style.lineHeight = "1.5";
+    div.appendChild(note);
+  }
+
+  const btn = document.createElement("button");
+  btn.textContent = (plan.plan_id === currentPlanId) ? "選択中" : "このプランで保存";
+  btn.disabled = (plan.plan_id === currentPlanId);
+  btn.style.border = "0";
+  btn.style.borderRadius = "10px";
+  btn.style.padding = "10px 12px";
+  btn.style.cursor = btn.disabled ? "not-allowed" : "pointer";
+  btn.style.fontWeight = "800";
+  btn.style.background = btn.disabled ? "#9db8a5" : "#1f7a39";
+  btn.style.color = "#fff";
+  btn.onclick = () => onSelect(plan);
+
+  div.appendChild(top);
+  div.appendChild(price);
+  div.appendChild(ul);
+  div.appendChild(btn);
+
+  return div;
+}
+
+async function saveContractWithPlan(currentUser, plan) {
   try {
     const tenant = await loadTenant(currentUser);
     if (tenant?.payment_method_configured) {
       throw new Error("支払い設定が完了しているため、契約は変更できません。");
     }
 
-    const seatRaw = seatSel.value || "";
-    const knowRaw = knowSel.value || "";
-    if (!seatRaw || !knowRaw) throw new Error("人数とナレッジ数を選択してください。");
-
-    const plan = findPlan(pricing, Number(seatRaw), Number(knowRaw));
-    if (!plan) throw new Error("料金が確定できません。");
-
-    const note = clampNote(noteEl.value || "");
+    const note = clampNote(noteEl?.value || "");
 
     await apiFetch(currentUser, "/v1/tenant/contract", {
       method: "POST",
       body: {
         account_id: accountId,
         tenant_id: tenantId,
+        // ★ ここが主：plan_idで決める
         plan_id: plan.plan_id,
-        seat_limit: plan.seat_limit,
-        knowledge_count: plan.knowledge_count,
-        monthly_amount_yen: plan.monthly_price,
+        // 互換のために残す（API側が参照しているなら）
+        monthly_amount_yen: Number(plan.monthly_price || 0),
         note
       }
     });
 
-    setStatus("保存しました（DB作成も実行されます）。", "ok");
+    // KPI表示（あれば）
+    if (kpiMonthly) kpiMonthly.textContent = yen(plan.monthly_price || 0);
+    if (kpiBase) kpiBase.textContent = yen(plan.monthly_price || 0);
+    if (kpiExtra) kpiExtra.textContent = "0円";
+
+    setStatus("保存しました。", "ok");
   } catch (e) {
     console.error(e);
     setStatus(e?.message || String(e), "err");
-  } finally {
-    btnSave.disabled = false;
   }
 }
 
@@ -266,6 +262,85 @@ async function markPaid(currentUser) {
   }
 }
 
+async function renderContractTab(currentUser) {
+  ensurePlansGrid();
+  setLegacyUiDisabled();
+
+  // tenant の現在契約
+  let tenant;
+  try {
+    tenant = await loadTenant(currentUser);
+  } catch (e) {
+    setStatus("tenant取得に失敗: " + (e?.message || String(e)), "err");
+    return;
+  }
+
+  // plans.json 取得
+  let raw;
+  try {
+    raw = await loadPlans(currentUser);
+  } catch (e) {
+    setStatus("plans取得に失敗: " + (e?.message || String(e)), "err");
+    return;
+  }
+
+  const { plans, limits, dedup } = normalizePlans(raw);
+
+  if (!plans.length) {
+    setStatus("plans.json の形式が不正です: " + JSON.stringify(raw), "err");
+    return;
+  }
+
+  // 上部に軽く情報を出す（必要なら）
+  const keepMax = limits?.qa_sets_keep_max ?? 5;
+  const activeMax = limits?.qa_set_active_max ?? 1;
+  const c = dedup?.candidate_cosine ?? 0.7;
+  const q = dedup?.confirm_cosine ?? 0.9;
+
+  setStatus(`保持QAセット=${keepMax} / 使用中=${activeMax} / 重複整理=${c}/${q}`, "ok");
+
+  // 既存のnote反映
+  if (tenant?.note && noteEl) noteEl.value = tenant.note;
+
+  // 現在の plan_id
+  const currentPlanId = (tenant?.plan_id || "").trim();
+
+  // KPI反映（あれば）
+  if (currentPlanId) {
+    const nowPlan = plans.find(p => p.plan_id === currentPlanId);
+    if (nowPlan) {
+      if (kpiMonthly) kpiMonthly.textContent = yen(nowPlan.monthly_price || 0);
+      if (kpiBase) kpiBase.textContent = yen(nowPlan.monthly_price || 0);
+      if (kpiExtra) kpiExtra.textContent = "0円";
+    }
+  }
+
+  // 表示
+  clearGrid();
+
+  // 簡易グリッド
+  plansGrid.style.display = "grid";
+  plansGrid.style.gridTemplateColumns = "repeat(auto-fit, minmax(240px, 1fr))";
+  plansGrid.style.gap = "12px";
+
+  for (const plan of plans) {
+    if (!plan.plan_id) continue;
+    const card = makeCard(plan, currentPlanId, async (p) => {
+      await saveContractWithPlan(currentUser, p);
+      // 保存後に再描画（選択中表示を更新）
+      await renderContractTab(currentUser);
+    });
+    plansGrid.appendChild(card);
+  }
+
+  // 支払い設定済みならボタン押せない（UIで抑止）
+  if (tenant?.payment_method_configured) {
+    setStatus("支払い設定済みのため、プラン変更はできません。", "err");
+    // 全ボタン無効化
+    plansGrid.querySelectorAll("button").forEach(b => { b.disabled = true; b.style.background = "#9db8a5"; });
+  }
+}
+
 (async function boot() {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
@@ -274,37 +349,8 @@ async function markPaid(currentUser) {
 
   if (tab !== "contract") return;
 
-  let pricingRaw;
-  try {
-    pricingRaw = await apiFetch(currentUser, "/v1/pricing", { method: "GET" });
-  } catch (e) {
-    setStatus("pricing取得に失敗: " + (e?.message || String(e)), "err");
-    return;
-  }
+  await renderContractTab(currentUser);
 
-  const pricing = normalizePricing(pricingRaw);
-
-  if (!pricing.seats.length || !pricing.knowledge_count.length) {
-    setStatus("pricingの形式が不正です: " + JSON.stringify(pricingRaw), "err");
-    return;
-  }
-
-  fillSelectsFromPlans(pricing);
-
-  try {
-    const t = await loadTenant(currentUser);
-    if (t?.seat_limit != null) seatSel.value = String(t.seat_limit);
-    if (t?.knowledge_count != null) knowSel.value = String(t.knowledge_count);
-    if (t?.note) noteEl.value = t.note;
-  } catch (e) {
-    setStatus("tenant取得に失敗: " + (e?.message || String(e)), "err");
-    return;
-  }
-
-  renderEstimate(pricing);
-  seatSel.addEventListener("change", () => renderEstimate(pricing));
-  knowSel.addEventListener("change", () => renderEstimate(pricing));
-
-  btnSave.addEventListener("click", () => saveContract(currentUser, pricing));
-  btnPayDummy.addEventListener("click", () => markPaid(currentUser));
+  // 既存の支払い（仮）ボタンは残す
+  if (btnPayDummy) btnPayDummy.addEventListener("click", () => markPaid(currentUser));
 })();
