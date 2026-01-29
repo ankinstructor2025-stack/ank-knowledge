@@ -31,6 +31,12 @@ async function loadSession(user) {
   return await apiFetch(user, "/v1/session", { method: "GET" });
 }
 
+// ★追加：単一テナント取得（A案）
+async function loadMyTenant(user, accountId) {
+  const aid = encodeURIComponent(accountId);
+  return await apiFetch(user, `/v1/my/tenant?account_id=${aid}`, { method: "GET" });
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
     gotoLogin("./index.html");
@@ -64,10 +70,32 @@ onAuthStateChanged(auth, async (user) => {
       return;
     }
 
-    // 3) Accountが1つ → tenantsへ
+    // 3) Accountが1つ → tenantが1つ＆basicなら QA作成へ直行、そうでなければ tenantsへ
     if (accounts.length === 1) {
       const a = accounts[0];
-      const aid = encodeURIComponent(a.account_id);
+      const accountId = (a.account_id || "").trim();
+      const aid = encodeURIComponent(accountId);
+
+      if (accountId) {
+        try {
+          const t = await loadMyTenant(user, accountId);
+          // { exists, tenant_id, plan_id }
+          if (t?.exists && t?.tenant_id) {
+            const tid = encodeURIComponent(t.tenant_id);
+            const planId = (t.plan_id || "").trim();
+
+            if (planId === "basic") {
+              setStatus("QA作成のみプランを確認しました。QA作成画面へ移動します。", "ok");
+              setTimeout(() => goto(`./qa_generate.html?account_id=${aid}&tenant_id=${tid}`), 150);
+              return;
+            }
+          }
+        } catch (e) {
+          // 失敗しても従来動作へフォールバック（事故らせない）
+          console.warn("my/tenant check failed:", e);
+        }
+      }
+
       setStatus("Accountを確認しました。テナント一覧へ移動します。", "ok");
       setTimeout(() => goto(`./tenants.html?account_id=${aid}`), 150);
       return;
