@@ -1,4 +1,4 @@
-// qa_generate.js（最新版）
+// qa_generate.js（最新版・導線統一版）
 // - ファイルのみ（コピペ/手入力なし）
 // - 1KB未満は対象外
 // - uploads.py の仕様（contract_id 前提）に合わせる
@@ -6,7 +6,6 @@
 //   PUT 署名URLへアップロード
 //   POST /v1/admin/upload-finalize（判定・OKならログ保存）
 // - OKになったら「結果ダウンロード」を有効化（いまは finalize 結果JSONをDL）
-//   ※ 次に「QA抽出API」をつなぐなら、OK時に object_key を渡して呼べばよい
 
 import { initFirebase, requireUser } from "./ank_firebase.js";
 import { apiFetch } from "./ank_api.js";
@@ -16,13 +15,15 @@ const { auth } = initFirebase();
 // URL params
 const qs = new URLSearchParams(location.search);
 const contractId = (qs.get("contract_id") || "").trim();
+const tenantId = (qs.get("tenant_id") || "").trim();
+const accountId = (qs.get("account_id") || "").trim();
 
 // DOM
 const metaLine = document.getElementById("metaLine");
 const backBtn = document.getElementById("backBtn");
 
 const fileInput = document.getElementById("fileInput");
-const formatSel = document.getElementById("formatSel"); // 使わなくてもOK（将来QA抽出で使う）
+const formatSel = document.getElementById("formatSel"); // 将来QA抽出で使う
 const btnUploadAndGenerate = document.getElementById("btnUploadAndGenerate");
 const btnDownload = document.getElementById("btnDownload");
 
@@ -134,11 +135,17 @@ function extractUploadMeta(resp) {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
   // 表示
-  metaLine.textContent = `contract_id=${contractId || "-"}`
+  metaLine.textContent =
+    `contract_id=${contractId || "-"} / tenant_id=${tenantId || "-"} / account_id=${accountId || "-"}`;
+
   if (backBtn) {
     backBtn.onclick = () => {
-      // 既存導線に合わせて必要なら変更
-      location.href = "./index.html";
+      // 統一：テナント一覧へ戻す（account_idがあれば渡す）
+      if (accountId) {
+        location.href = `./tenants.html?account_id=${encodeURIComponent(accountId)}`;
+      } else {
+        location.href = "./tenants.html";
+      }
     };
   }
 
