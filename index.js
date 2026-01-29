@@ -58,5 +58,5 @@ function getRoleFromSession(sess) {
 
   // メンバー → QA検索
   // ※あなたの実ファイル名に合わせてここを1行だけ変更
-  goto("./qa_search.html");
+  goto("./qa_generate.html");
 })();
