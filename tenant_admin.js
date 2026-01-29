@@ -8,7 +8,7 @@ const { auth } = initFirebase();
 // URL params
 // =========================
 const qs = new URLSearchParams(location.search);
-const tenantId = (qs.get("tenant_id") || "").trim();
+const tenantId = (qs.get("tenant_id") || "").trim();   // 空でも動かす（初回契約で作る想定）
 const accountId = (qs.get("account_id") || "").trim();
 const tab = (qs.get("tab") || "contract").trim();
 
@@ -47,6 +47,7 @@ function showPanel(name) {
 }
 
 function goTab(next) {
+  // tenant_id が空のときは、空のまま遷移（初回契約で tenant_id が返る想定）
   location.href =
     `./tenant_admin.html?tenant_id=${encodeURIComponent(tenantId)}` +
     `&account_id=${encodeURIComponent(accountId)}` +
@@ -81,6 +82,9 @@ function clampNote(s) {
 // API
 // =========================
 async function loadTenant(currentUser) {
+  // tenant_id が無いなら読み込めない（初回契約は /v1/contract で作る）
+  if (!tenantId) return null;
+
   return await apiFetch(
     currentUser,
     `/v1/tenant?tenant_id=${encodeURIComponent(tenantId)}&account_id=${encodeURIComponent(accountId)}`,
@@ -173,10 +177,10 @@ function makeCard(plan, currentPlanId, onSelect) {
     card.appendChild(n);
   });
 
-  // 保存ボタン
+  // 契約ボタン（文言変更）
   const btn = document.createElement("button");
   btn.textContent =
-    plan.plan_id === currentPlanId ? "選択中" : "このプランで保存";
+    plan.plan_id === currentPlanId ? "選択中" : "このプランで契約";
   btn.disabled = plan.plan_id === currentPlanId;
   btn.style.marginTop = "auto";
   btn.style.border = "0";
@@ -196,8 +200,9 @@ function makeCard(plan, currentPlanId, onSelect) {
 // =========================
 // Actions
 // =========================
-async function saveContractWithPlan(currentUser, plan) {
+async function createOrUpdateContractAndGoQa(currentUser, plan) {
   try {
+    // 既存テナントがあるならチェック（支払い設定済みは変更不可）
     const tenant = await loadTenant(currentUser);
     if (tenant?.payment_method_configured) {
       throw new Error("支払い設定が完了しているため、契約は変更できません。");
@@ -205,24 +210,39 @@ async function saveContractWithPlan(currentUser, plan) {
 
     const note = clampNote(noteEl?.value || "");
 
-    await apiFetch(currentUser, "/v1/tenant/contract", {
+    // ★ tenant と contract を作る/更新するAPI（サーバ側で実装する想定）
+    // 返り値: { tenant_id, contract_id }
+    const res = await apiFetch(currentUser, "/v1/contract", {
       method: "POST",
       body: {
         account_id: accountId,
-        tenant_id: tenantId,
+        tenant_id: tenantId || null,                 // 初回は null でOK
         plan_id: plan.plan_id,
         monthly_amount_yen: Number(plan.monthly_price),
         note
       }
     });
 
-    // KPI更新
+    const newTenantId = (res?.tenant_id || "").trim();
+    const contractId = (res?.contract_id || "").trim();
+
+    if (!newTenantId || !contractId) {
+      throw new Error("契約作成に失敗しました（tenant_id / contract_id が返っていません）。");
+    }
+
+    // KPI更新（表示用）
     kpiBase.textContent = yen(plan.monthly_price);
     kpiExtra.textContent = "0円";
     kpiMonthly.textContent = yen(plan.monthly_price);
 
-    setStatus("保存しました。", "ok");
-    await renderContractTab(currentUser);
+    setStatus("契約しました。QA作成へ移動します。", "ok");
+
+    // ★ 支払い設定は必須にしない：契約できたらQA作成へ
+    // ここは実ファイル名に合わせて変更
+    location.href =
+      `./qa_generate.html?contract_id=${encodeURIComponent(contractId)}` +
+      `&tenant_id=${encodeURIComponent(newTenantId)}` +
+      `&account_id=${encodeURIComponent(accountId)}`;
   } catch (e) {
     console.error(e);
     setStatus(e?.message || String(e), "err");
@@ -232,6 +252,8 @@ async function saveContractWithPlan(currentUser, plan) {
 async function markPaid(currentUser) {
   btnPayDummy.disabled = true;
   try {
+    if (!tenantId) throw new Error("tenant_id がありません。先に契約を作成してください。");
+
     await apiFetch(currentUser, "/v1/tenant/mark-paid", {
       method: "POST",
       body: { account_id: accountId, tenant_id: tenantId }
@@ -249,7 +271,7 @@ async function markPaid(currentUser) {
 // Main render
 // =========================
 async function renderContractTab(currentUser) {
-  const tenant = await loadTenant(currentUser);
+  const tenant = await loadTenant(currentUser); // tenantId空ならnull
   const raw = await loadPlans(currentUser);
 
   const plans = Array.isArray(raw?.plans) ? raw.plans : [];
@@ -267,28 +289,36 @@ async function renderContractTab(currentUser) {
 
   plans.forEach(plan => {
     const card = makeCard(plan, currentPlanId, p =>
-      saveContractWithPlan(currentUser, p)
+      createOrUpdateContractAndGoQa(currentUser, p)
     );
     plansGrid.appendChild(card);
   });
 
-  // 既存契約があればKPI反映
+  // 既存契約があればKPI反映（tenant保持方式の表示用）
   if (tenant?.monthly_amount_yen != null) {
     kpiBase.textContent = yen(tenant.monthly_amount_yen);
     kpiExtra.textContent = "0円";
     kpiMonthly.textContent = yen(tenant.monthly_amount_yen);
+  } else {
+    // 初回は "-" のままでもいいが、見た目を揃えるなら 0 表示でも可
+    // kpiBase.textContent = "0円";
+    // kpiExtra.textContent = "0円";
+    // kpiMonthly.textContent = "0円";
   }
 
   if (tenant?.note && noteEl) {
     noteEl.value = tenant.note;
   }
 
+  // 支払い設定済みなら変更不可（契約変更を止めるだけ）
   if (tenant?.payment_method_configured) {
     setStatus("支払い設定済みのため、プラン変更はできません。", "err");
     plansGrid.querySelectorAll("button").forEach(b => {
       b.disabled = true;
       b.style.background = "#9db8a5";
     });
+  } else {
+    setStatus("", "");
   }
 }
 
@@ -299,7 +329,7 @@ async function renderContractTab(currentUser) {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
   metaLine.textContent =
-    `tenant_id=${tenantId} / account_id=${accountId} / tab=${tab}`;
+    `tenant_id=${tenantId || "(new)"} / account_id=${accountId} / tab=${tab}`;
 
   showPanel(tab);
   if (tab !== "contract") return;
