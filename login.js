@@ -48,8 +48,8 @@ async function routeAfterLogin(user) {
   }
 
   // users登録済だが active 契約なし（招待待ち/未有効化）
-  // ここは運用次第だが、いったん contracts に落とす（表示は後で調整してOK）
-  location.replace("./contracts.html");
+  // ここは運用次第だが、いったん tenants に落とす（表示は後で調整してOK）
+  location.replace("./tenants.html");
 }
 
 btnEl.addEventListener("click", async () => {
