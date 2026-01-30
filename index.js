@@ -19,7 +19,6 @@ function pickTenantId(t) {
 }
 
 /**
- * ★ 追加：tenants へ遷移する専用関数
  * tenants.html は account_id 必須なので、ここで必ず付与する
  */
 function gotoTenants(sess) {
@@ -32,6 +31,8 @@ function gotoTenants(sess) {
 
   if (!accountId) {
     console.error("account_id not found in /v1/session:", sess);
+    // ここで止める（勝手にloginへ戻さない）
+    // ＝無限ループを防ぐ
     return;
   }
 
@@ -63,10 +64,10 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  // 3) session 取得（401なら login に戻す）
+  // 3) session 取得（★修正：user を渡して統一）
   let sess;
   try {
-    sess = await apiFetch("/v1/session");
+    sess = await apiFetch(user, "/v1/session", { method: "GET" });
   } catch (e) {
     console.error("session error:", e);
     goto(`./login.html?return_to=${encodeURIComponent("./")}`);
@@ -79,7 +80,7 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  // 5) tenants が無い/空なら tenants へ（★修正点）
+  // 5) tenants が無い/空なら tenants へ
   const tenants = Array.isArray(sess?.tenants) ? sess.tenants : [];
   if (tenants.length === 0) {
     gotoTenants(sess);
