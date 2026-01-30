@@ -8,8 +8,9 @@ const { auth } = initFirebase();
 // URL params
 // =========================
 const qs = new URLSearchParams(location.search);
-const tenantId = (qs.get("tenant_id") || "").trim();   // 空でも動かす（初回契約で作る想定）
+const tenantId = (qs.get("tenant_id") || "").trim();
 const accountId = (qs.get("account_id") || "").trim();
+// 内部名は互換のため "contract" のまま（UIだけ「プラン」にする）
 const tab = (qs.get("tab") || "contract").trim();
 
 // =========================
@@ -47,7 +48,6 @@ function showPanel(name) {
 }
 
 function goTab(next) {
-  // tenant_id が空のときは、空のまま遷移（初回契約で tenant_id が返る想定）
   location.href =
     `./tenant_admin.html?tenant_id=${encodeURIComponent(tenantId)}` +
     `&account_id=${encodeURIComponent(accountId)}` +
@@ -78,13 +78,22 @@ function clampNote(s) {
   return t.length <= 400 ? t : t.slice(0, 400);
 }
 
+function tabLabel(t) {
+  if (t === "users") return "users";
+  if (t === "knowledge") return "knowledge";
+  return "plan";
+}
+
+function isTenantActive(tenant) {
+  const st = (tenant?.contract_status || "").toString().toLowerCase();
+  return st === "active";
+}
+
 // =========================
 // API
 // =========================
 async function loadTenant(currentUser) {
-  // tenant_id が無いなら読み込めない（初回契約は /v1/contract で作る）
   if (!tenantId) return null;
-
   return await apiFetch(
     currentUser,
     `/v1/tenant?tenant_id=${encodeURIComponent(tenantId)}&account_id=${encodeURIComponent(accountId)}`,
@@ -93,7 +102,6 @@ async function loadTenant(currentUser) {
 }
 
 async function loadPlans(currentUser) {
-  // tenants.py に追加した GET /v1/plans を叩く
   return await apiFetch(currentUser, "/v1/plans", { method: "GET" });
 }
 
@@ -177,10 +185,10 @@ function makeCard(plan, currentPlanId, onSelect) {
     card.appendChild(n);
   });
 
-  // 契約ボタン（文言変更）
+  // 選択ボタン（文言のみ最新化）
   const btn = document.createElement("button");
   btn.textContent =
-    plan.plan_id === currentPlanId ? "選択中" : "このプランで契約";
+    plan.plan_id === currentPlanId ? "選択中" : "このプランを選択";
   btn.disabled = plan.plan_id === currentPlanId;
   btn.style.marginTop = "auto";
   btn.style.border = "0";
@@ -202,15 +210,14 @@ function makeCard(plan, currentPlanId, onSelect) {
 // =========================
 async function createOrUpdateContractAndGoQa(currentUser, plan) {
   try {
-    // 既存テナントがあるならチェック（支払い設定済みは変更不可）
     const tenant = await loadTenant(currentUser);
     if (tenant?.payment_method_configured) {
-      throw new Error("支払い設定が完了しているため、契約は変更できません。");
+      throw new Error("支払い設定が完了しているため、プランは変更できません。");
     }
 
     const note = clampNote(noteEl?.value || "");
 
-    // ★ tenant と contract を作る/更新するAPI（サーバ側で実装する想定）
+    // ★ 互換のため /v1/contract を維持（サーバ側で tenant:contract = 1:1 に upsert する想定）
     // 返り値: { tenant_id, contract_id }
     const res = await apiFetch(currentUser, "/v1/contract", {
       method: "POST",
@@ -227,7 +234,7 @@ async function createOrUpdateContractAndGoQa(currentUser, plan) {
     const contractId = (res?.contract_id || "").trim();
 
     if (!newTenantId || !contractId) {
-      throw new Error("契約作成に失敗しました（tenant_id / contract_id が返っていません）。");
+      throw new Error("プラン設定に失敗しました（tenant_id / contract_id が返っていません）。");
     }
 
     // KPI更新（表示用）
@@ -235,10 +242,9 @@ async function createOrUpdateContractAndGoQa(currentUser, plan) {
     kpiExtra.textContent = "0円";
     kpiMonthly.textContent = yen(plan.monthly_price);
 
-    setStatus("契約しました。QA作成へ移動します。", "ok");
+    setStatus("プランを設定しました。QA作成へ移動します。", "ok");
 
-    // ★ 支払い設定は必須にしない：契約できたらQA作成へ
-    // ここは実ファイル名に合わせて変更
+    // 互換のため contract_id も渡す（QA側が参照している間は残す）
     location.href =
       `./qa_generate.html?contract_id=${encodeURIComponent(contractId)}` +
       `&tenant_id=${encodeURIComponent(newTenantId)}` +
@@ -252,13 +258,14 @@ async function createOrUpdateContractAndGoQa(currentUser, plan) {
 async function markPaid(currentUser) {
   btnPayDummy.disabled = true;
   try {
-    if (!tenantId) throw new Error("tenant_id がありません。先に契約を作成してください。");
+    if (!tenantId) throw new Error("tenant_id がありません。先にプランを設定してください。");
 
     await apiFetch(currentUser, "/v1/tenant/mark-paid", {
       method: "POST",
       body: { account_id: accountId, tenant_id: tenantId }
     });
-    setStatus("支払い設定完了（仮）にしました。以後、契約は変更不可です。", "ok");
+
+    setStatus("支払い設定を完了しました（仮）。以後、プランは変更できません。", "ok");
   } catch (e) {
     console.error(e);
     setStatus(e?.message || String(e), "err");
@@ -294,23 +301,18 @@ async function renderContractTab(currentUser) {
     plansGrid.appendChild(card);
   });
 
-  // 既存契約があればKPI反映（tenant保持方式の表示用）
+  // 既存プランがあればKPI反映（tenant保持方式の表示用）
   if (tenant?.monthly_amount_yen != null) {
     kpiBase.textContent = yen(tenant.monthly_amount_yen);
     kpiExtra.textContent = "0円";
     kpiMonthly.textContent = yen(tenant.monthly_amount_yen);
-  } else {
-    // 初回は "-" のままでもいいが、見た目を揃えるなら 0 表示でも可
-    // kpiBase.textContent = "0円";
-    // kpiExtra.textContent = "0円";
-    // kpiMonthly.textContent = "0円";
   }
 
   if (tenant?.note && noteEl) {
     noteEl.value = tenant.note;
   }
 
-  // 支払い設定済みなら変更不可（契約変更を止めるだけ）
+  // 支払い設定済みなら変更不可
   if (tenant?.payment_method_configured) {
     setStatus("支払い設定済みのため、プラン変更はできません。", "err");
     plansGrid.querySelectorAll("button").forEach(b => {
@@ -328,13 +330,45 @@ async function renderContractTab(currentUser) {
 (async function boot() {
   const currentUser = await requireUser(auth, { loginUrl: "./login.html" });
 
+  // 最低限の表示
   metaLine.textContent =
-    `tenant_id=${tenantId || "(new)"} / account_id=${accountId} / tab=${tab}`;
+    `tenant_id=${tenantId || "(new)"} / account_id=${accountId} / tab=${tabLabel(tab)}`;
 
+  // tenant_id が無い状態で users/knowledge を開くのは不可 → プランへ戻す
+  if (!tenantId && tab !== "contract") {
+    showPanel("contract");
+    setStatus("最初にプランを設定してください。", "err");
+    return;
+  }
+
+  // tenant が active でない場合、users/knowledge は不可 → プランへ戻す
+  let tenant = null;
+  if (tenantId) {
+    try {
+      tenant = await loadTenant(currentUser);
+    } catch (e) {
+      console.error(e);
+      showPanel("contract");
+      setStatus(e?.message || String(e), "err");
+      // プラン画面へ最低限は出す
+    }
+  }
+
+  if (tab !== "contract") {
+    if (!tenant || !isTenantActive(tenant)) {
+      showPanel("contract");
+      setStatus("プラン未確定のため、この機能は利用できません。プランを確定してください。", "err");
+      await renderContractTab(currentUser);
+      btnPayDummy.addEventListener("click", () => markPaid(currentUser));
+      return;
+    }
+  }
+
+  // 通常表示
   showPanel(tab);
-  if (tab !== "contract") return;
 
-  await renderContractTab(currentUser);
-
-  btnPayDummy.addEventListener("click", () => markPaid(currentUser));
+  if (tab === "contract") {
+    await renderContractTab(currentUser);
+    btnPayDummy.addEventListener("click", () => markPaid(currentUser));
+  }
 })();

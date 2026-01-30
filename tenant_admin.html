@@ -10,7 +10,7 @@
     .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; box-shadow:0 1px 2px rgba(0,0,0,.04); margin-bottom: 16px; }
     h1 { margin:0 0 10px; font-size:20px; }
     .muted { color:#6b7280; font-size:13px; }
-    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+    .tabs { display:flex;_toggle:unset; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center; }
     button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; }
     button.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -33,12 +33,12 @@
     .hint { margin-top:10px; font-size:12px; color:#6b7280; line-height:1.6; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:12px; color:#6b7280; }
 
-    /* ★ plans.jsonカード用 */
+    /* plans.jsonカード用 */
     .planNote { margin-top: 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:12px; line-height:1.7; }
     .planNote strong { font-weight: 800; }
     #plansGrid { margin-top: 14px; }
 
-    /* 旧pricing UIは残すが非表示（JSでも隠すが保険） */
+    /* 旧pricing UIは残すが非表示（保険） */
     .legacyPricing { display:none; }
 
     @media (max-width: 780px){
@@ -55,7 +55,7 @@
       <div class="muted" id="metaLine"></div>
 
       <div class="tabs">
-        <button id="tabContract" type="button">契約</button>
+        <button id="tabContract" type="button">プラン</button>
         <button id="tabUsers" type="button">ユーザー管理</button>
         <button id="tabKnowledge" type="button">ナレッジ管理</button>
         <div class="spacer"></div>
@@ -63,18 +63,16 @@
       </div>
     </div>
 
-    <!-- 契約 -->
+    <!-- プラン（内部名: contract） -->
     <div class="card" id="panelContract">
-      <h2 style="margin:0 0 8px; font-size:16px;">契約内容</h2>
-      <div class="muted">支払い前は修正可能、支払い設定完了後は変更不可。</div>
+      <h2 style="margin:0 0 8px; font-size:16px;">利用プラン</h2>
+      <div class="muted">プランは支払い設定前まで変更できます。支払い設定完了後は変更できません。</div>
 
-      <!-- ★ 誤解防止の注釈 -->
       <div class="planNote">
         <div><strong>QA生成</strong>は、プランに含まれる回数を超える場合は<strong>都度課金</strong>です。</div>
         <div>保持できるQAセットは最大<strong>5</strong>、検索で使えるQAセットは<strong>1</strong>です。</div>
       </div>
 
-      <!-- ★ plans.json から作るプラン一覧 -->
       <div id="plansGrid"></div>
 
       <!-- 旧pricing UI（互換のため残すが非表示） -->
@@ -107,22 +105,21 @@
           <div class="val" id="kpiExtra">0円</div>
         </div>
         <div class="box">
-          <div class="title">月額合計（保存値）</div>
+          <div class="title">月額合計</div>
           <div class="val" id="kpiMonthly">-</div>
         </div>
       </div>
 
       <div class="tabs" style="margin-top:16px;">
-        <button id="btnPayDummy" type="button">支払い設定完了（仮）</button>
+        <button id="btnPayDummy" type="button">支払い設定を完了する（仮）</button>
         <div class="spacer"></div>
 
-        <!-- 旧「契約を保存」ボタンは残すが非表示（JSでも消す） -->
         <button id="btnSave" class="primary legacyPricing" type="button" disabled>契約を保存</button>
       </div>
 
       <div class="hint">
         ・保存時に <code>db/write.db</code> と <code>db/read.db</code> をGCSに生成します（無ければ）。<br>
-        ・支払い設定完了後は、契約の再保存は不可になります。<br>
+        ・支払い設定完了後は、プランの変更はできません。<br>
       </div>
 
       <div id="status" class="status"></div>
