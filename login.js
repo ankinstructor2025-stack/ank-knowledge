@@ -67,3 +67,22 @@ async function routeAfterLogin(user) {
   // users登録済だが active 契約なし（招待待ち/未有効化）
   gotoTenants();
 }
+
+btnEl.addEventListener("click", async () => {
+  try {
+    setBusy(true);
+    setMsg("");
+
+    // Googleログイン（ポップアップ）
+    const result = await signInWithPopup(auth, provider);
+
+    // 遷移
+    await routeAfterLogin(result.user);
+  } catch (e) {
+    // popup closed / blocked もここに入る
+    console.error(e);
+    setMsg(`ログインに失敗しました: ${e?.message || e}`);
+    setBusy(false);
+  }
+});
+
