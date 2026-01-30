@@ -176,8 +176,12 @@ function renderContracts(contracts) {
 async function loadContracts() {
   logLine("契約一覧 取得開始");
   try {
-    const payload = await apiFetch(currentUser, "/v1/contracts", { method: "GET" });
-    const list = normalizeContractsPayload(payload);
+    // tenant_id は URL or session から取得
+    const payload = await apiFetch(
+      currentUser,
+      `/v1/tenants/${tenantId}/contract`,
+      { method: "GET" }
+    );
     const adminActive = list.filter(isAdminActiveContract);
     renderContracts(adminActive);
     logLine("契約一覧 表示完了（admin+active）", { count: adminActive.length });
