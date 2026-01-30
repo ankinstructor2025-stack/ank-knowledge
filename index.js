@@ -47,16 +47,21 @@ function getRoleFromSession(sess) {
     return;
   }
 
-  // 4) 役割で分岐（図どおり）
-  const role = getRoleFromSession(sess);
+  // 4) テナントが無い → テナント作成へ
+  if (!Array.isArray(sess.tenants) || sess.tenants.length === 0) {
+    goto("./tenants.html"); // tenants.html で「新規テナント作成」を表示
+    return;
+  }
 
-  if (role === "admin") {
-    // 管理者 → テナント一覧
+  // 5) 契約ありテナントを探す
+  const contracted = sess.tenants.find(t => isTrue(t.has_contract));
+
+  if (!contracted) {
+    // テナントはあるが契約が無い → 管理画面へ
     goto("./tenants.html");
     return;
   }
 
-  // メンバー → QA検索
-  // ※あなたの実ファイル名に合わせてここを1行だけ変更
-  goto("./qa_generate.html");
+  // 6) 契約ありテナントが1つ以上 → QA作成
+  goto(`./qa_generate.html?tenant_id=${encodeURIComponent(contracted.tenant_id)}`);
 })();
