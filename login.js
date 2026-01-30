@@ -35,9 +35,9 @@ async function routeAfterLogin(user) {
   // 2) return_to が無い場合は /v1/session で分岐
   const sess = await apiFetch(user, "/v1/session", { method: "GET" });
 
-  // users未登録 → 新規契約画面（契約導線だけ）
+  // users未登録 → 新規テナント画面（契約導線だけ）
   if (!sess.user_exists) {
-    location.replace("./contracts.html");
+    location.replace("./tenants.html");
     return;
   }
 
