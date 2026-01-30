@@ -58,7 +58,6 @@ function renderTenants(list) {
     const tenantId = t.tenant_id;
     const name = t.name || tenantId;
 
-    // ※ここはデータ構造を変えない（内部名はそのまま）
     const contractStatus = (t.contract_status || "draft").toLowerCase();
     const isActive = (contractStatus === "active");
     const paid = !!t.payment_method_configured;
@@ -69,7 +68,6 @@ function renderTenants(list) {
 
     const tr = document.createElement("tr");
 
-    // テナント
     const tdName = document.createElement("td");
     tdName.dataset.label = "テナント";
     const divName = document.createElement("div");
@@ -80,11 +78,9 @@ function renderTenants(list) {
     tdName.appendChild(divName);
     tdName.appendChild(divId);
 
-    // 状態
     const tdStatus = document.createElement("td");
     tdStatus.dataset.label = "状態";
 
-    // 表示名だけ分かりやすくする（値は変えない）
     const statusLabel = (contractStatus === "active") ? "active" : "draft";
     const payLabel = paid ? "paid" : "unpaid";
 
@@ -94,7 +90,6 @@ function renderTenants(list) {
     tdStatus.appendChild(document.createTextNode(" "));
     tdStatus.appendChild(p2);
 
-    // プラン
     const tdPlan = document.createElement("td");
     tdPlan.dataset.label = "プラン";
     tdPlan.innerHTML = `
@@ -103,7 +98,6 @@ function renderTenants(list) {
       <div>月額: <strong>${monthly}</strong></div>
     `;
 
-    // 操作
     const tdBtns = document.createElement("td");
     tdBtns.dataset.label = "操作";
     const box = document.createElement("div");
@@ -151,15 +145,38 @@ async function loadTenants(user) {
   setStatus(listStatus, `表示件数: ${list.length}`, "ok");
 }
 
+/** ★追加：auth確定待ち（tenantsでも必須） */
+async function waitForAuthUser(timeoutMs = 8000) {
+  return await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      try { unsub?.(); } catch {}
+      resolve(null);
+    }, timeoutMs);
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      clearTimeout(timer);
+      try { unsub(); } catch {}
+      resolve(u || null);
+    });
+  });
+}
+
 debugInfo.textContent = `account_id=${accountId || "(none)"}`;
 
-onAuthStateChanged(auth, async (user) => {
-  if (!user) {
-    location.replace("./login.html");
-    return;
-  }
+// ★変更：onAuthStateChanged で即リダイレクトしない。確定待ちしてから判断する。
+(async () => {
   if (!accountId) {
     setStatus(listStatus, "URLに account_id がありません。tenants.html?account_id=... の形式で開いてください。", "err");
+    return;
+  }
+
+  setStatus(listStatus, "認証確認中…", "ok");
+  const user = await waitForAuthUser(8000);
+
+  if (!user) {
+    // loginへ戻す（return_to を付けて戻ってこられるようにする）
+    const rt = encodeURIComponent(`./tenants.html?account_id=${encodeURIComponent(accountId)}`);
+    location.replace(`./login.html?return_to=${rt}`);
     return;
   }
 
@@ -169,7 +186,7 @@ onAuthStateChanged(auth, async (user) => {
     console.error(e);
     setStatus(listStatus, e?.message || String(e), "err");
   }
-});
+})();
 
 btnReload.addEventListener("click", async () => {
   if (!auth.currentUser) return;
@@ -204,10 +221,8 @@ btnCreate.addEventListener("click", async (ev) => {
     setStatus(createStatus, `作成しました: ${tid}`, "ok");
     tenantName.value = "";
 
-    // 一覧更新
     await loadTenants(auth.currentUser);
 
-    // すぐプラン（旧 contract）タブへ入る
     gotoTenantAdmin(tid, "contract");
 
   } catch (e) {
