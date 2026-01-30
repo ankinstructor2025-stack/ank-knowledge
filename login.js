@@ -35,9 +35,26 @@ async function routeAfterLogin(user) {
   // 2) return_to が無い場合は /v1/session で分岐
   const sess = await apiFetch(user, "/v1/session", { method: "GET" });
 
+  // account_id を必ず取り出す（キー揺れ吸収）
+  const accountId =
+    sess.account_id ||
+    sess.accountId ||
+    (sess.account && sess.account.account_id) ||
+    "";
+
+  // tenants.html は account_id 前提なので、無いなら止める（noneで進めない）
+  function gotoTenants() {
+    if (!accountId) {
+      setMsg("account_id が取得できませんでした。/v1/session のレスポンスを確認してください。");
+      setBusy(false);
+      return;
+    }
+    location.replace(`./tenants.html?account_id=${encodeURIComponent(accountId)}`);
+  }
+
   // users未登録 → 新規テナント画面（契約導線だけ）
   if (!sess.user_exists) {
-    location.replace("./tenants.html");
+    gotoTenants();
     return;
   }
 
@@ -48,33 +65,5 @@ async function routeAfterLogin(user) {
   }
 
   // users登録済だが active 契約なし（招待待ち/未有効化）
-  // ここは運用次第だが、いったん tenants に落とす（表示は後で調整してOK）
-  location.replace("./tenants.html");
+  gotoTenants();
 }
-
-btnEl.addEventListener("click", async () => {
-  setMsg("");
-  setBusy(true);
-
-  try {
-    setMsg("ログイン中...");
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-
-    setMsg("ログイン後の状態を確認中...");
-    await routeAfterLogin(user);
-
-  } catch (err) {
-    console.error(err);
-    const popupBlocked =
-      err?.code === "auth/popup-blocked" || err?.code === "auth/popup-closed-by-user";
-
-    setMsg(
-      popupBlocked
-        ? "ログインできませんでした。ポップアップがブロックされていないか確認してください。"
-        : "ログインに失敗しました。時間をおいて再度お試しください。"
-    );
-    setBusy(false);
-    return;
-  }
-});
