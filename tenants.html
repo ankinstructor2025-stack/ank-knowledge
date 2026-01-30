@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>契約一覧</title>
+  <title>テナント一覧</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; background:#fafafa; margin:0; }
@@ -44,16 +44,16 @@
 <body>
   <div class="wrap">
 
-    <h1>契約一覧</h1>
+    <h1>テナント一覧</h1>
     <div class="muted" id="debugInfo"></div>
 
     <div class="card">
-      <h2 style="margin:0 0 8px; font-size:16px;">新規契約（テナント）作成</h2>
-      <div class="muted">契約＝テナント（1対1）。作成後、契約タブでプランを確定してください。</div>
+      <h2 style="margin:0 0 8px; font-size:16px;">新規テナント作成</h2>
+      <div class="muted">テナントを作成した後、「プラン」タブで利用条件を確定してください。</div>
 
       <div class="row" style="margin-top:12px;">
         <div>
-          <label for="tenantName">契約名（任意）</label>
+          <label for="tenantName">テナント名（任意）</label>
           <input id="tenantName" placeholder="例：自社本番 / 検証 / 顧客A など" />
         </div>
         <div class="toolbar" style="align-items:flex-end;">
@@ -66,15 +66,15 @@
     </div>
 
     <div class="card">
-      <h2 style="margin:0 0 8px; font-size:16px;">契約一覧</h2>
-      <div class="muted">契約が未確定（draft）の間は、ユーザー管理・ナレッジ管理は選べません。</div>
+      <h2 style="margin:0 0 8px; font-size:16px;">テナント一覧</h2>
+      <div class="muted">プランが未確定（draft）の間は、ユーザー管理・ナレッジ管理は選べません。</div>
 
       <div id="listStatus" class="status"></div>
 
       <table>
         <thead>
           <tr>
-            <th>契約</th>
+            <th>テナント</th>
             <th>状態</th>
             <th>プラン</th>
             <th>操作</th>

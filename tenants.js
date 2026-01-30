@@ -48,7 +48,7 @@ function renderTenants(list) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 4;
-    td.textContent = "契約がありません。まずは上のフォームから作成してください。";
+    td.textContent = "テナントがありません。まずは上のフォームから作成してください。";
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
@@ -57,6 +57,8 @@ function renderTenants(list) {
   for (const t of list) {
     const tenantId = t.tenant_id;
     const name = t.name || tenantId;
+
+    // ※ここはデータ構造を変えない（内部名はそのまま）
     const contractStatus = (t.contract_status || "draft").toLowerCase();
     const isActive = (contractStatus === "active");
     const paid = !!t.payment_method_configured;
@@ -67,9 +69,9 @@ function renderTenants(list) {
 
     const tr = document.createElement("tr");
 
-    // 契約
+    // テナント
     const tdName = document.createElement("td");
-    tdName.dataset.label = "契約";
+    tdName.dataset.label = "テナント";
     const divName = document.createElement("div");
     divName.className = "name";
     divName.textContent = name;
@@ -81,8 +83,13 @@ function renderTenants(list) {
     // 状態
     const tdStatus = document.createElement("td");
     tdStatus.dataset.label = "状態";
-    const p1 = pill(contractStatus, isActive ? "ok" : "warn");
-    const p2 = pill(paid ? "paid" : "unpaid", paid ? "ok" : "warn");
+
+    // 表示名だけ分かりやすくする（値は変えない）
+    const statusLabel = (contractStatus === "active") ? "active" : "draft";
+    const payLabel = paid ? "paid" : "unpaid";
+
+    const p1 = pill(statusLabel, isActive ? "ok" : "warn");
+    const p2 = pill(payLabel, paid ? "ok" : "warn");
     tdStatus.appendChild(p1);
     tdStatus.appendChild(document.createTextNode(" "));
     tdStatus.appendChild(p2);
@@ -103,21 +110,21 @@ function renderTenants(list) {
     box.className = "btns";
 
     const bContract = document.createElement("button");
-    bContract.textContent = "契約";
+    bContract.textContent = "プラン";
     bContract.onclick = () => gotoTenantAdmin(tenantId, "contract");
     box.appendChild(bContract);
 
     const bUsers = document.createElement("button");
     bUsers.textContent = "ユーザー管理";
     bUsers.disabled = !isActive;
-    bUsers.title = isActive ? "" : "契約を確定してから利用できます";
+    bUsers.title = isActive ? "" : "プランを確定してから利用できます";
     bUsers.onclick = () => gotoTenantAdmin(tenantId, "users");
     box.appendChild(bUsers);
 
     const bKnow = document.createElement("button");
     bKnow.textContent = "ナレッジ管理";
     bKnow.disabled = !isActive;
-    bKnow.title = isActive ? "" : "契約を確定してから利用できます";
+    bKnow.title = isActive ? "" : "プランを確定してから利用できます";
     bKnow.onclick = () => gotoTenantAdmin(tenantId, "knowledge");
     box.appendChild(bKnow);
 
@@ -200,7 +207,7 @@ btnCreate.addEventListener("click", async (ev) => {
     // 一覧更新
     await loadTenants(auth.currentUser);
 
-    // すぐ契約タブへ入る（導線が自然）
+    // すぐプラン（旧 contract）タブへ入る
     gotoTenantAdmin(tid, "contract");
 
   } catch (e) {
