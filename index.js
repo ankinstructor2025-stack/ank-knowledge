@@ -18,6 +18,26 @@ function pickTenantId(t) {
   return t?.tenant_id || t?.id || t?.tenantId || "";
 }
 
+/**
+ * ★ 追加：tenants へ遷移する専用関数
+ * tenants.html は account_id 必須なので、ここで必ず付与する
+ */
+function gotoTenants(sess) {
+  const accountId =
+    sess?.account_id ||
+    sess?.account?.account_id ||
+    sess?.account?.id ||
+    sess?.accounts?.[0]?.account_id ||
+    sess?.accounts?.[0]?.id;
+
+  if (!accountId) {
+    console.error("account_id not found in /v1/session:", sess);
+    return;
+  }
+
+  goto(`./tenants.html?account_id=${encodeURIComponent(accountId)}`);
+}
+
 async function waitForAuthUser(timeoutMs = 3000) {
   return await new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -53,34 +73,38 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  // 4) users未登録ならアカウント作成へ（あなたの導線に合わせて変更してOK）
+  // 4) users未登録ならアカウント作成へ
   if (!isTrue(sess?.user_exists)) {
     goto("./account_new.html");
     return;
   }
 
-  // 5) tenants が無い/空なら tenants へ
+  // 5) tenants が無い/空なら tenants へ（★修正点）
   const tenants = Array.isArray(sess?.tenants) ? sess.tenants : [];
   if (tenants.length === 0) {
-    goto("./tenants.html");
+    gotoTenants(sess);
     return;
   }
 
-  // 6) 契約ありテナントを探す（キー揺れ吸収）
+  // 6) 契約ありテナントを探す
   const contracted = tenants.find(
-    (t) => isTrue(t?.has_contract) || isTrue(t?.has_active_contract) || isTrue(t?.contract_active)
+    (t) =>
+      isTrue(t?.has_contract) ||
+      isTrue(t?.has_active_contract) ||
+      isTrue(t?.contract_active)
   );
 
   if (!contracted) {
-    goto("./tenants.html");
+    gotoTenants(sess);
     return;
   }
 
   const tenantId = pickTenantId(contracted);
   if (!tenantId) {
-    goto("./tenants.html");
+    gotoTenants(sess);
     return;
   }
 
+  // 7) QA作成へ
   goto(`./qa_generate.html?tenant_id=${encodeURIComponent(tenantId)}`);
 })();
