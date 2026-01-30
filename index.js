@@ -1,17 +1,12 @@
 // index.js
-import { initFirebase, requireUser } from "./ank_firebase.js";
+import { initFirebase } from "./ank_firebase.js";
 import { apiFetch } from "./ank_api.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
 
-initFirebase();
-
-/**
- * 画面遷移の“唯一の司令塔”。
- * - login.js はログイン成功後に必ず "./"（この index.html）へ戻すだけ
- * - ここで /v1/session を見て行き先を決める
- */
+const { auth } = initFirebase();
 
 function goto(url) {
-  // 戻るボタンでループしにくいので replace 推奨
+  // 履歴を汚さない（戻るでループしにくい）
   location.replace(url);
 }
 
@@ -23,53 +18,66 @@ function pickTenantId(t) {
   return t?.tenant_id || t?.id || t?.tenantId || "";
 }
 
+async function waitForAuthUser(timeoutMs = 3000) {
+  return await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      try { unsub?.(); } catch {}
+      resolve(null);
+    }, timeoutMs);
+
+    const unsub = onAuthStateChanged(auth, (u) => {
+      clearTimeout(timer);
+      try { unsub(); } catch {}
+      resolve(u || null);
+    });
+  });
+}
+
 (async () => {
-  // 1) 未ログインなら login へ（戻り先を付与）
-  const user = await requireUser({ redirect: false }).catch(() => null);
+  // 1) 認証状態が確定するまで待つ（重要）
+  const user = await waitForAuthUser(5000);
+
+  // 2) 未ログインなら login へ
   if (!user) {
     goto(`./login.html?return_to=${encodeURIComponent("./")}`);
     return;
   }
 
-  // 2) セッション取得
+  // 3) session 取得（401なら login に戻す）
   let sess;
   try {
     sess = await apiFetch("/v1/session");
   } catch (e) {
-    console.error(e);
-    // 401なら再ログインへ
+    console.error("session error:", e);
     goto(`./login.html?return_to=${encodeURIComponent("./")}`);
     return;
   }
 
-  // 3) user_exists が false なら初回登録（UI上のアカウント作成画面へ）
+  // 4) users未登録ならアカウント作成へ（あなたの導線に合わせて変更してOK）
   if (!isTrue(sess?.user_exists)) {
     goto("./account_new.html");
     return;
   }
 
-  // 4) tenants が無い/空なら tenants へ（テナント作成・選択）
+  // 5) tenants が無い/空なら tenants へ
   const tenants = Array.isArray(sess?.tenants) ? sess.tenants : [];
   if (tenants.length === 0) {
     goto("./tenants.html");
     return;
   }
 
-  // 5) 契約ありテナントを探す（キーの揺れを吸収）
+  // 6) 契約ありテナントを探す（キー揺れ吸収）
   const contracted = tenants.find(
     (t) => isTrue(t?.has_contract) || isTrue(t?.has_active_contract) || isTrue(t?.contract_active)
   );
 
   if (!contracted) {
-    // テナントはあるが契約なし → tenants（契約導線）
     goto("./tenants.html");
     return;
   }
 
-  // 6) QA作成へ
   const tenantId = pickTenantId(contracted);
   if (!tenantId) {
-    // tenant_id が取れないなら tenants へ戻す（データ不整合）
     goto("./tenants.html");
     return;
   }
