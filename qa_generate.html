@@ -16,7 +16,8 @@
     button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; font-weight:700; }
     button.primary { background:#1f7a39; border-color:#1f7a39; color:#fff; }
     button:disabled { opacity:.55; cursor:not-allowed; }
-    input, select { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
+    input, select, textarea { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
+    textarea { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size: 12px; }
     label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
     .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top: 10px; }
     .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
@@ -93,6 +94,27 @@
       </div>
 
       <div id="status" class="status"></div>
+    </div>
+
+    <!-- ★ 追加：生成プロンプト表示 -->
+    <div class="card">
+      <h2>生成プロンプト（OpenAIに投げる内容）</h2>
+      <div class="muted">
+        ・finalize が OK のときに、方式（qa_mode）に対応するプロンプト定義を読み込み、messages を組み立てて表示します。<br>
+        ・このままコピーして API に投入できる形です。
+      </div>
+
+      <div class="tabs" style="margin-top:12px;">
+        <button id="btnCopyPrompt" type="button" disabled>コピー</button>
+        <button id="btnDownloadPrompt" type="button" disabled>prompt.json をダウンロード</button>
+        <div class="spacer"></div>
+        <div class="muted" id="promptMeta">-</div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label for="promptBox">messages(JSON)</label>
+        <textarea id="promptBox" readonly placeholder="ここに messages JSON が表示されます"></textarea>
+      </div>
     </div>
 
   </div>
