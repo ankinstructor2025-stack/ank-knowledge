@@ -1,74 +1,123 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>QA作成（ファイルから）</title>
   <style>
-    body { font-family: sans-serif; }
-    .box { border: 1px solid #ccc; padding: 12px; margin-bottom: 12px; }
-    .kpi { display: flex; gap: 16px; }
-    .kpi-item { flex: 1; }
-    .label { font-size: 12px; color: #666; }
-    .val { font-size: 14px; }
-    textarea { width: 100%; height: 240px; }
-    .err { color: red; }
-    .ok { color: green; }
+    body { font-family: system-ui, -apple-system, "Segoe UI","Noto Sans JP", sans-serif; margin:0; background:#fafafa; color:#111827; }
+    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
+    .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; box-shadow:0 1px 2px rgba(0,0,0,.04); margin-bottom: 14px; }
+    h1 { margin:0 0 8px; font-size:18px; }
+    h2 { margin:0 0 10px; font-size:15px; }
+    .muted { color:#6b7280; font-size:13px; line-height:1.6; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .spacer { flex:1; }
+    button { padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; cursor:pointer; font-weight:700; }
+    button.primary { background:#1f7a39; border-color:#1f7a39; color:#fff; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    input, select, textarea { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:10px; background:#fff; font-size:14px; box-sizing:border-box; }
+    textarea { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size: 12px; }
+    label { display:block; font-size:13px; color:#374151; margin-bottom:6px; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top: 10px; }
+    .kpi { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:12px; }
+    .kpi .box { border:1px solid #e5e7eb; border-radius:12px; padding:12px; background:#fff; }
+    .kpi .title { font-size:12px; color:#6b7280; }
+    .kpi .val { margin-top:6px; font-size:14px; font-weight:800; word-break: break-all; }
+    .status { display:none; margin-top:12px; padding:10px 12px; border-radius:10px; font-size:13px; white-space:pre-wrap; }
+    .status.ok { display:block; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+    .status.err { display:block; background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size:12px; color:#6b7280; }
+    @media (max-width: 820px){
+      .row { grid-template-columns: 1fr; }
+      .kpi { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
+  <div class="wrap">
 
-<h2>QA作成（ファイルから）</h2>
+    <div class="card">
+      <div class="tabs">
+        <h1 style="margin:0;">QA作成（ファイルから）</h1>
+        <div class="spacer"></div>
+        <button id="backBtn" type="button">テナント一覧へ</button>
+      </div>
+      <div class="muted" id="metaLine" style="margin-top:6px;"></div>
+      <div class="muted" style="margin-top:8px;">
+        ・入力は<strong>ファイルのみ</strong>です（コピペ／手入力は扱いません）。<br>
+        ・<strong>1KB未満のファイルは対象外</strong>です。<br>
+        ・対象：<code>.txt</code> / <code>.csv</code> / <code>.json</code>（必要なら追加）<br>
+      </div>
+    </div>
 
-<div class="box">
-  <div>入力はファイルのみ（コピペ不可）</div>
-  <div>1KB未満は対象外</div>
-  <div>対象: .txt / .csv / .json</div>
-</div>
+    <div class="card">
+      <h2>ファイル選択</h2>
 
-<div class="box">
-  <div>
-    <label>入力ファイル</label><br />
-    <input type="file" id="fileInput" />
+      <div class="row">
+        <div>
+          <label for="fileInput">入力ファイル</label>
+          <input id="fileInput" type="file" accept=".txt,.csv,.json,text/plain,application/json,text/csv" />
+          <div class="muted" style="margin-top:6px;">※ 1KB未満はアップロードしません。</div>
+        </div>
+
+        <div>
+          <label for="formatSel">出力形式</label>
+          <select id="formatSel">
+            <option value="json">JSON</option>
+            <option value="jsonl">JSONL</option>
+            <option value="csv">CSV</option>
+          </select>
+          <div class="muted" style="margin-top:6px;">※ 返せない形式はサーバ側で弾いてOK。</div>
+        </div>
+      </div>
+
+      <div class="tabs" style="margin-top:12px;">
+        <button id="btnUploadAndGenerate" class="primary" type="button">アップロードしてQA作成</button>
+        <div class="spacer"></div>
+        <button id="btnDownload" type="button" disabled>結果をダウンロード</button>
+      </div>
+
+      <div class="kpi">
+        <div class="box">
+          <div class="title">状態</div>
+          <div class="val" id="kpiState">-</div>
+        </div>
+        <div class="box">
+          <div class="title">source_key</div>
+          <div class="val" id="kpiSource">-</div>
+        </div>
+        <div class="box">
+          <div class="title">件数</div>
+          <div class="val" id="kpiCount">-</div>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>生成プロンプト（OpenAIに投げる内容）</h2>
+      <div class="muted">
+        ・finalize が OK のときに、方式（qa_mode）に対応するプロンプト定義を読み込み、messages を組み立てて表示します。<br>
+        ・このままコピーして API に投入できる形です。
+      </div>
+
+      <div class="tabs" style="margin-top:12px;">
+        <button id="btnCopyPrompt" type="button" disabled>コピー</button>
+        <button id="btnDownloadPrompt" type="button" disabled>prompt.json をダウンロード</button>
+        <div class="spacer"></div>
+        <div class="muted" id="promptMeta">-</div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label for="promptBox">messages(JSON)</label>
+        <textarea id="promptBox" readonly placeholder="ここに messages JSON が表示されます"></textarea>
+      </div>
+    </div>
+
   </div>
 
-  <div style="margin-top:8px;">
-    <label>出力形式</label><br />
-    <select id="outputFormat">
-      <option value="json">JSON</option>
-    </select>
-  </div>
-
-  <button id="btnUploadAndGenerate" style="margin-top:12px;">
-    アップロードしてQA作成
-  </button>
-</div>
-
-<div class="box kpi">
-  <div class="kpi-item">
-    <div class="label">状態</div>
-    <div class="val" id="kpiState">-</div>
-  </div>
-  <div class="kpi-item">
-    <div class="label">source_key</div>
-    <div class="val" id="kpiSource">-</div>
-  </div>
-  <div class="kpi-item">
-    <div class="label">件数</div>
-    <div class="val" id="kpiCount">-</div>
-  </div>
-</div>
-
-<div class="box">
-  <div id="status">-</div>
-</div>
-
-<div class="box">
-  <h3>生成プロンプト（OpenAIに投げる内容）</h3>
-  <textarea id="promptBox" readonly>
-ここに messages JSON が表示されます
-  </textarea>
-</div>
-
-<script src="qa_generate.js"></script>
+  <script type="module" src="./qa_generate.js"></script>
 </body>
 </html>
