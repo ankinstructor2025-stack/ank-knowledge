@@ -1,10 +1,4 @@
-// =====================
-// ★追加：Firebase auth 初期化（tenants.js と同じ）
-// =====================
-import { initFirebase } from "./ank_firebase.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
-
-const { auth } = initFirebase();
+import { apiFetch as apiFetchBase } from "./ank_api.js";
 
 // =====================
 // 定数
@@ -41,51 +35,54 @@ function setPromptBox(obj) {
 }
 
 // =====================
-// ★追加：auth確定待ち（tenants.js と同じ考え方）
+// auth待ち（最少）
 // =====================
-async function getCurrentUserOrNull(timeoutMs = 8000) {
-  return await new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      try { unsub?.(); } catch {}
-      resolve(null);
-    }, timeoutMs);
+async function getCurrentUserOrNull(timeoutMs = 5000) {
+  // すでにセットされているなら即返す
+  if (window.currentUser) return window.currentUser;
 
-    const unsub = onAuthStateChanged(auth, (u) => {
-      clearTimeout(timer);
-      try { unsub(); } catch {}
-      window.currentUser = u || null; // 既存ロジック互換
-      resolve(u || null);
+  // Firebase互換（firebase.auth() がいる場合は onAuthStateChanged を待つ）
+  if (window.firebase && typeof window.firebase.auth === "function") {
+    return await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(window.firebase.auth().currentUser || null), timeoutMs);
+      try {
+        window.firebase.auth().onAuthStateChanged((u) => {
+          clearTimeout(t);
+          window.currentUser = u;
+          resolve(u || null);
+        });
+      } catch (e) {
+        clearTimeout(t);
+        resolve(null);
+      }
     });
+  }
+
+  // それ以外は少し待ってから currentUser を見る
+  return await new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (window.currentUser) return resolve(window.currentUser);
+      if (Date.now() - started > timeoutMs) return resolve(null);
+      setTimeout(tick, 100);
+    };
+    tick();
   });
 }
 
 // =====================
 // API 呼び出し
 // =====================
+// tenants.js と同じ apiFetch 実装（ank_api.js）に寄せる。
+// 目的：相対パス fetch による 405（静的ホストへPOST）を防ぐ。
 async function apiFetch(currentUser, path, { method = "GET", body = null } = {}) {
   if (!currentUser) {
+    // throwしない（画面表示で終わらせる）
     setStatus("ログインしていません（not signed in）", "err");
     return null;
   }
-
-  const token = await currentUser.getIdToken(true);
-  const headers = { "Authorization": `Bearer ${token}` };
-  if (body) headers["Content-Type"] = "application/json";
-
-  const res = await fetch(path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : null,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`API error ${res.status}: ${text}`);
-  }
-
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return await res.json();
-  return await res.text();
+  // ank_api.js 側で Authorization 付与・API_BASE 接続・JSON処理を行う
+  return await apiFetchBase(currentUser, path, { method, body });
 }
 
 // =====================
