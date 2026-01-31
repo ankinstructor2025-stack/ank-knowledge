@@ -1,4 +1,12 @@
 // =====================
+// ★追加：Firebase auth 初期化（tenants.js と同じ）
+// =====================
+import { initFirebase } from "./ank_firebase.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-auth.js";
+
+const { auth } = initFirebase();
+
+// =====================
 // 定数
 // =====================
 const API_UPLOAD_URL = "/v1/admin/upload-url";
@@ -33,36 +41,22 @@ function setPromptBox(obj) {
 }
 
 // =====================
-// auth待ち（最少）
+// ★追加：auth確定待ち（tenants.js と同じ考え方）
 // =====================
-async function getCurrentUserOrNull(timeoutMs = 5000) {
-  // すでにセットされているなら即返す
-  if (window.currentUser) return window.currentUser;
+async function getCurrentUserOrNull(timeoutMs = 8000) {
+  return await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      try { unsub?.(); } catch {}
+      resolve(null);
+    }, timeoutMs);
 
-  // Firebase互換（firebase.auth() がいる場合は onAuthStateChanged を待つ）
-  if (window.firebase && typeof window.firebase.auth === "function") {
-    return await new Promise((resolve) => {
-      const t = setTimeout(() => resolve(window.firebase.auth().currentUser || null), timeoutMs);
-      try {
-        window.firebase.auth().onAuthStateChanged((u) => {
-          clearTimeout(t);
-          window.currentUser = u;
-          resolve(u || null);
-        });
-      } catch (e) {
-        clearTimeout(t);
-        resolve(null);
-      }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      clearTimeout(timer);
+      try { unsub(); } catch {}
+      window.currentUser = u || null; // 既存ロジック互換
+      resolve(u || null);
     });
-  }
-
-  // それ以外は window.currentUser が来るのを少しだけ待つ（既存構成向け）
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (window.currentUser) return window.currentUser;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  return null;
+  });
 }
 
 // =====================
@@ -70,7 +64,6 @@ async function getCurrentUserOrNull(timeoutMs = 5000) {
 // =====================
 async function apiFetch(currentUser, path, { method = "GET", body = null } = {}) {
   if (!currentUser) {
-    // throwしない（画面表示で終わらせる）
     setStatus("ログインしていません（not signed in）", "err");
     return null;
   }
@@ -130,7 +123,7 @@ async function finalizeUpload(currentUser, meta, file) {
 }
 
 // =====================
-// ★ QA化チェック（judge-method）
+// QA化チェック（judge-method）
 // =====================
 async function judgeMethod(currentUser, objectKey, contractId) {
   return await apiFetch(currentUser, API_JUDGE_METHOD, {
@@ -150,7 +143,7 @@ async function getQaPrompt(currentUser, mode) {
 }
 
 // =====================
-// ボタン（最少）
+// ボタン
 // =====================
 $("btnUploadAndGenerate").onclick = async () => {
   try {
@@ -165,14 +158,13 @@ $("btnUploadAndGenerate").onclick = async () => {
       return;
     }
 
-    // 1KB未満は送らない（UIの約束）
     if (file.size < 1024) {
       setStatus("1KB未満のファイルは対象外です", "err");
       return;
     }
 
-    // auth待ち
-    const currentUser = await getCurrentUserOrNull(5000);
+    // auth確定待ち
+    const currentUser = await getCurrentUserOrNull();
     if (!currentUser) {
       setStatus("ログインしていません（not signed in）", "err");
       return;
@@ -180,21 +172,17 @@ $("btnUploadAndGenerate").onclick = async () => {
 
     const contractId = window.contractId;
 
-    // 1) upload-url
     setStatus("アップロードURL取得中…", "ok");
     const meta = await createUploadUrl(currentUser, file);
     if (!meta) return;
 
-    // 2) PUT upload
     setStatus("アップロード中…", "ok");
     await uploadFileToSignedUrl(meta.upload_url, file);
 
-    // 3) finalize
     setStatus("アップロード確定中…", "ok");
     const fin = await finalizeUpload(currentUser, meta, file);
     if (!fin) return;
 
-    // 4) QA化チェック（judge-method）
     setStatus("QA化チェック中…", "ok");
     setKpi("判定中", meta.object_key, "-");
 
@@ -210,23 +198,16 @@ $("btnUploadAndGenerate").onclick = async () => {
     const mode = judge.method || fin.qa_mode || "D";
     setKpi(`OK（方式=${mode}）`, meta.object_key, "-");
 
-    // 5) プロンプト表示
     setStatus("プロンプト取得中…", "ok");
     const prompt = await getQaPrompt(currentUser, mode);
     if (!prompt) return;
 
-    // textarea は value に入れる
     setPromptBox(prompt);
 
-    // ボタンUI（必要最低限）
-    const copyBtn = $("btnCopyPrompt");
-    const dlBtn = $("btnDownloadPrompt");
-    if (copyBtn) copyBtn.disabled = false;
-    if (dlBtn) dlBtn.disabled = false;
+    if ($("btnCopyPrompt")) $("btnCopyPrompt").disabled = false;
+    if ($("btnDownloadPrompt")) $("btnDownloadPrompt").disabled = false;
 
-    // メタ表示（任意）
-    const pm = $("promptMeta");
-    if (pm) pm.textContent = `mode=${mode}`;
+    if ($("promptMeta")) $("promptMeta").textContent = `mode=${mode}`;
 
     setStatus("完了", "ok");
   } catch (e) {
@@ -235,13 +216,15 @@ $("btnUploadAndGenerate").onclick = async () => {
   }
 };
 
-// コピー／ダウンロード（HTMLにボタンがあるので最少で活かす）
+// =====================
+// コピー／ダウンロード
+// =====================
 $("btnCopyPrompt")?.addEventListener("click", async () => {
   try {
     const text = $("promptBox")?.value || "";
     await navigator.clipboard.writeText(text);
     setStatus("コピーしました", "ok");
-  } catch (e) {
+  } catch {
     setStatus("コピーに失敗しました", "err");
   }
 });
