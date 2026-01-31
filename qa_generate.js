@@ -45,6 +45,7 @@ const API_UPLOAD_FINALIZE = "/v1/admin/upload-finalize";
 
 // ★プロンプト定義を取得するAPI（サーバ側で GCS settings/qa_prompts/{mode}.json を読む想定）
 const API_QA_PROMPT = "/v1/admin/qa-prompt"; // GET ?mode=A
+const API_JUDGE_METHOD = "/v1/admin/dialogues/judge-method";
 
 // rules
 const MIN_BYTES = 1024;
@@ -135,6 +136,14 @@ async function finalizeUpload(currentUser, meta, file) {
     kind: "dialogue"
   };
   return await apiFetch(currentUser, API_UPLOAD_FINALIZE, { method: "POST", body });
+}
+
+async function judgeMethod(currentUser, objectKey) {
+  const body = {
+    contract_id: contractId,
+    object_key: objectKey
+  };
+  return await apiFetch(currentUser, API_JUDGE_METHOD, { method: "POST", body });
 }
 
 // upload-urlの応答から必要項目を取り出す
@@ -271,6 +280,25 @@ function buildMessages(promptDef, text) {
       // finalize（判定）
       setKpi("判定中", meta.object_key, "-");
       const fin = await finalizeUpload(currentUser, meta, file);
+
+      // ★ QA化チェック（judge-method）
+      setKpi("QA化チェック中", meta.object_key, "-");
+      const j = await judgeMethod(currentUser, meta.object_key);
+
+      if (!j?.can_extract_qa) {
+        const reasons = Array.isArray(j?.reasons) ? j.reasons.join("\n") : "";
+        setKpi("NG", meta.object_key, "-");
+        setStatus(
+          `QA化NG: ${j?.reasons?.[0] || j?.message || "QAを生成できません。"}`
+            + (reasons ? `\n${reasons}` : ""),
+          "err"
+        );
+        return;
+      }
+
+      // judgeの方式を優先（無ければfinalizeのqa_mode）
+      const modeFromJudge = String(j?.method || "").trim();
+      const mode = modeFromJudge || String(fin?.qa_mode || "").trim();
 
       lastFinalize = fin;
 
