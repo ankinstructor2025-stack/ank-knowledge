@@ -1,5 +1,5 @@
 // =====================
-// 定数
+// API パス
 // =====================
 const API_UPLOAD_URL = "/v1/admin/upload-url";
 const API_UPLOAD_FINALIZE = "/v1/admin/upload-finalize";
@@ -7,30 +7,42 @@ const API_QA_PROMPT = "/v1/admin/qa-prompt";
 const API_JUDGE_METHOD = "/v1/admin/dialogues/judge-method";
 
 // =====================
-// ユーティリティ
+// 安全DOM操作
 // =====================
-function setStatus(text, type = "info") {
+function safeSetText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function safeSetValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+// =====================
+// 表示系
+// =====================
+function setStatus(text, type = "") {
   const el = document.getElementById("status");
+  if (!el) return;
   el.textContent = text;
   el.className = type;
 }
 
 function setKpi(status, sourceKey, count) {
-  document.getElementById("kpi-status").textContent = status || "-";
-  document.getElementById("kpi-source-key").textContent = sourceKey || "-";
-  document.getElementById("kpi-count").textContent = count ?? "-";
+  safeSetText("kpiState", status || "-");
+  safeSetText("kpiSource", sourceKey || "-");
+  safeSetText("kpiCount", count ?? "-");
 }
 
 // =====================
-// API 呼び出し
+// API共通
 // =====================
 async function apiFetch(currentUser, path, { method = "GET", body = null } = {}) {
   if (!currentUser) throw new Error("not signed in");
 
   const token = await currentUser.getIdToken(true);
-  const headers = {
-    "Authorization": `Bearer ${token}`,
-  };
+  const headers = { Authorization: `Bearer ${token}` };
   if (body) headers["Content-Type"] = "application/json";
 
   const res = await fetch(path, {
@@ -52,10 +64,10 @@ async function apiFetch(currentUser, path, { method = "GET", body = null } = {})
 }
 
 // =====================
-// アップロード関連
+// Upload flow
 // =====================
 async function createUploadUrl(currentUser, file) {
-  return await apiFetch(currentUser, API_UPLOAD_URL, {
+  return apiFetch(currentUser, API_UPLOAD_URL, {
     method: "POST",
     body: {
       filename: file.name,
@@ -68,18 +80,14 @@ async function createUploadUrl(currentUser, file) {
 async function uploadFileToSignedUrl(signedUrl, file) {
   const res = await fetch(signedUrl, {
     method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
+    headers: { "Content-Type": file.type || "application/octet-stream" },
     body: file,
   });
-  if (!res.ok) {
-    throw new Error(`upload failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error("upload failed");
 }
 
 async function finalizeUpload(currentUser, meta, file) {
-  return await apiFetch(currentUser, API_UPLOAD_FINALIZE, {
+  return apiFetch(currentUser, API_UPLOAD_FINALIZE, {
     method: "POST",
     body: {
       object_key: meta.object_key,
@@ -90,10 +98,10 @@ async function finalizeUpload(currentUser, meta, file) {
 }
 
 // =====================
-// ★ QA化チェック（judge-method）
+// QA化チェック
 // =====================
 async function judgeMethod(currentUser, objectKey, contractId) {
-  return await apiFetch(currentUser, API_JUDGE_METHOD, {
+  return apiFetch(currentUser, API_JUDGE_METHOD, {
     method: "POST",
     body: {
       contract_id: contractId,
@@ -106,22 +114,22 @@ async function judgeMethod(currentUser, objectKey, contractId) {
 // プロンプト取得
 // =====================
 async function getQaPrompt(currentUser, mode) {
-  return await apiFetch(
+  return apiFetch(
     currentUser,
     `${API_QA_PROMPT}?mode=${encodeURIComponent(mode)}`
   );
 }
 
 // =====================
-// メイン処理
+// メイン
 // =====================
 document.getElementById("btnUploadAndGenerate").onclick = async () => {
   try {
     setStatus("処理開始");
     setKpi("-", "-", "-");
+    safeSetValue("promptBox", "");
 
-    const fileInput = document.getElementById("fileInput");
-    const file = fileInput.files[0];
+    const file = document.getElementById("fileInput").files[0];
     if (!file) {
       setStatus("ファイルを選択してください", "err");
       return;
@@ -130,49 +138,40 @@ document.getElementById("btnUploadAndGenerate").onclick = async () => {
     const currentUser = window.currentUser;
     const contractId = window.contractId;
 
-    // 1) upload-url
+    // 1 upload-url
     setStatus("アップロードURL取得中…");
     const meta = await createUploadUrl(currentUser, file);
 
-    // 2) PUT upload
+    // 2 PUT
     setStatus("アップロード中…");
     await uploadFileToSignedUrl(meta.upload_url, file);
 
-    // 3) finalize
+    // 3 finalize
     setStatus("アップロード確定中…");
-    const fin = await finalizeUpload(currentUser, meta, file);
+    await finalizeUpload(currentUser, meta, file);
 
-    // ★ 4) QA化チェック（ここが追加ポイント）
+    // 4 judge-method
     setStatus("QA化チェック中…");
     setKpi("判定中", meta.object_key, "-");
 
-    const judge = await judgeMethod(
-      currentUser,
-      meta.object_key,
-      contractId
-    );
+    const judge = await judgeMethod(currentUser, meta.object_key, contractId);
 
-    if (!judge?.can_extract_qa) {
+    if (!judge.can_extract_qa) {
       setKpi("NG", meta.object_key, "-");
-      setStatus(
-        `QA化NG: ${judge?.reasons?.[0] || "QAを生成できません。"}`,
-        "err"
-      );
+      setStatus(`QA化不可: ${judge.reasons?.[0] || "NG"}`, "err");
       return;
     }
 
-    // judge の方式を最優先
-    const mode = judge.method || fin.qa_mode;
+    const mode = judge.method;
     setKpi(`OK（方式=${mode}）`, meta.object_key, "-");
 
-    // 5) プロンプト表示
+    // 5 prompt
     setStatus("プロンプト取得中…");
     const prompt = await getQaPrompt(currentUser, mode);
 
-    document.getElementById("promptArea").textContent =
-      JSON.stringify(prompt, null, 2);
+    safeSetValue("promptBox", JSON.stringify(prompt, null, 2));
+    setStatus("完了", "ok");
 
-    setStatus("完了");
   } catch (e) {
     console.error(e);
     setStatus(String(e.message || e), "err");
