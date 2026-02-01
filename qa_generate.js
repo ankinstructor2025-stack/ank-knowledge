@@ -91,9 +91,10 @@ async function createUploadUrl(user, file) {
   return await apiCall(user, API_UPLOAD_URL, {
     method: "POST",
     body: {
+      tenant_id: context.requireTenantId(),
       filename: file.name,
       content_type: file.type || "application/octet-stream",
-      size: file.size,
+      size_bytes: file.size,
     },
   });
 }
