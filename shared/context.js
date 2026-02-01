@@ -1,243 +1,174 @@
-// context.js
-// 方針（あなたの条件に合わせて固定）
-// - QAのみ：ログイン時（/v1/session or /v1/bootstrap）で作業に必要な情報が決まる
-// - 以後、各画面は context から読むだけ（URL/画面ごとの推測は禁止）
-// - tenant_id / plan_id / role は session で維持（sessionStorage）
-// - user_id は保持しない（Firebase token が真実）
-// - account_id は「保持しない」が基本（必要なら“メモリ上のみ”で保持）
-// - return_to はログイン制御専用（1回使ったら消す）
+// shared/context.js
+// グローバルな「ログイン後コンテキスト」を一元管理する
+// ・URLパラメータ非依存
+// ・tenant は optional
+// ・contract / plan を基準に状態判断できる
 
-const NS = "ank_ctx:";
+const STORAGE_KEY = "ank_context_v1";
 
-// ===== storage keys (固定: 勝手に変えない) =====
-const KEY = {
-  boot: NS + "bootstrapped",
-  bootAt: NS + "bootstrapped_at",
+const _state = {
+  bootstrapped: false,
 
-  tenant: NS + "tenant_id",
-  plan: NS + "plan_id",
-  role: NS + "role",
+  account_id: null,
+  contract_id: null,
+  plan_id: null,
 
-  // login navigation only
-  returnTo: NS + "return_to",
+  tenant_id: null,
+
+  raw_session: null,
 };
 
-// ===== in-memory only (ページを閉じると消える) =====
-let _mem = {
-  account_id: "", // サーバが返しても「保存」はしない
-  // 必要なら他もここに足す
-};
-
-// ===== helpers =====
-function nowIso() {
-  return new Date().toISOString();
+// ==========================
+// internal
+// ==========================
+function save() {
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_state));
 }
 
-function ssGet(k) {
+function load() {
   try {
-    return (sessionStorage.getItem(k) || "").trim();
-  } catch {
-    return "";
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw);
+    Object.assign(_state, obj);
+  } catch (e) {
+    console.warn("context load failed:", e);
   }
 }
-function ssSet(k, v) {
-  try {
-    const s = (v ?? "").toString().trim();
-    if (!s) {
-      sessionStorage.removeItem(k);
-      return;
-    }
-    sessionStorage.setItem(k, s);
-  } catch {
-    // ignore
-  }
-}
-function ssBoolGet(k) {
-  return ssGet(k) === "1";
-}
-function ssBoolSet(k, b) {
-  ssSet(k, b ? "1" : "");
+
+function clear() {
+  sessionStorage.removeItem(STORAGE_KEY);
+  Object.keys(_state).forEach(k => (_state[k] = null));
+  _state.bootstrapped = false;
 }
 
-function isProbablySafeReturnTo(path) {
-  const p = (path || "").trim();
-  if (!p) return false;
-  // login.html 自身へ戻すとループしやすいので禁止
-  if (p.includes("login.html")) return false;
-  // 絶対URLは禁止（オープンリダイレクト対策）
-  if (/^https?:\/\//i.test(p)) return false;
-  return true;
-}
+// 初期ロード
+load();
 
-/**
- * サーバレスポンスから context を確定する。
- * 期待フォーマット（例）:
- * {
- *   "user": { "user_id": "...", "email": "..." },
- *   "context": { "tenant_id": "...", "plan_id": "...", "role": "...", "account_id": "..." }
- * }
- * または legacy で直下に tenant_id 等がある場合も拾う（壊さないため）
- */
-function applyBootstrapPayload(payload) {
-  if (!payload || typeof payload !== "object") {
-    throw new Error("bootstrap payload is empty");
-  }
-
-  const ctx = payload.context && typeof payload.context === "object" ? payload.context : payload;
-
-  const tenantId = (ctx.tenant_id || ctx.tenantId || "").toString().trim();
-  const planId = (ctx.plan_id || ctx.planId || "").toString().trim();
-  const role = (ctx.role || "").toString().trim();
-  const accountId = (ctx.account_id || ctx.accountId || "").toString().trim();
-
-  if (!tenantId) throw new Error("tenant_id is missing in session/bootstrap response");
-  // plan_id / role は環境により未確定もあり得るので必須にはしない（必要ならここを必須化してOK）
-
-  // ここで “セッション維持” を確定
-  ssSet(KEY.tenant, tenantId);
-  if (planId) ssSet(KEY.plan, planId);
-  if (role) ssSet(KEY.role, role);
-
-  // account_id は永続化しない（メモリのみ）
-  _mem.account_id = accountId;
-
-  ssBoolSet(KEY.boot, true);
-  ssSet(KEY.bootAt, nowIso());
-
-  return {
-    tenant_id: tenantId,
-    plan_id: planId,
-    role,
-    account_id: accountId,
-  };
-}
-
-// ===== public API =====
+// ==========================
+// public API
+// ==========================
 export const context = {
-  // ----- bootstrap -----
-  isBootstrapped() {
-    return ssBoolGet(KEY.boot) && !!ssGet(KEY.tenant);
+  /**
+   * セッションAPIから状態を確定させる
+   * tenant_id が無くても失敗しない
+   */
+  async bootstrap(apiCall, { endpoint = "/v1/session" } = {}) {
+    const sess = await apiCall(endpoint, { method: "GET" });
+
+    _state.raw_session = sess || null;
+
+    _state.account_id =
+      sess?.account_id ??
+      sess?.context?.account_id ??
+      null;
+
+    _state.contract_id =
+      sess?.contract_id ??
+      sess?.context?.contract_id ??
+      null;
+
+    _state.plan_id =
+      sess?.plan_id ??
+      sess?.context?.plan_id ??
+      null;
+
+    _state.tenant_id =
+      sess?.tenant_id ??
+      sess?.context?.tenant_id ??
+      null;
+
+    _state.bootstrapped = true;
+    save();
+
+    return this.snapshot();
   },
 
   /**
-   * ログイン直後に必ず1回呼ぶ想定（QAのみ：ここで全部決まる）
-   * - apiFetch は既存の共通関数を想定（Authorization: Bearer を付けるやつ）
-   * - 既に bootstrap 済みなら何もしない（壊さない）
+   * 状態のスナップショット（readonly）
    */
-  async bootstrap(apiFetch, { endpoint = "/v1/session", force = false } = {}) {
-    if (!force && context.isBootstrapped()) {
-      return context.snapshot();
-    }
-    if (typeof apiFetch !== "function") {
-      throw new Error("bootstrap requires apiFetch(path, {method, body})");
-    }
-
-    // /v1/session か /v1/bootstrap のどちらでもOK。サーバ側に合わせる
-    const payload = await apiFetch(endpoint, { method: "GET" });
-
-    applyBootstrapPayload(payload);
-    return context.snapshot();
-  },
-
-  /**
-   * tenant 必須ページで使う：無ければ例外
-   * 例外をUI側で捕まえて「ボタン無効化」「テナント未選択表示」で止める（無限ループ防止）
-   */
-  requireTenantId() {
-    const t = ssGet(KEY.tenant);
-    if (!t) throw new Error("tenant_id is required (not bootstrapped)");
-    return t;
-  },
-
-  getTenantId() {
-    return ssGet(KEY.tenant);
-  },
-
-  getPlanId() {
-    return ssGet(KEY.plan);
-  },
-
-  getRole() {
-    return ssGet(KEY.role);
-  },
-
-  // account_id は保存しない（必要ならこの getter だけで参照）
-  getAccountId() {
-    return (_mem.account_id || "").trim();
-  },
-
-  // 画面表示・デバッグ用
   snapshot() {
     return {
-      bootstrapped: context.isBootstrapped(),
-      bootstrapped_at: ssGet(KEY.bootAt),
-
-      tenant_id: ssGet(KEY.tenant),
-      plan_id: ssGet(KEY.plan),
-      role: ssGet(KEY.role),
-
-      // memory only
-      account_id: (_mem.account_id || "").trim(),
+      bootstrapped: _state.bootstrapped,
+      account_id: _state.account_id,
+      contract_id: _state.contract_id,
+      plan_id: _state.plan_id,
+      tenant_id: _state.tenant_id,
     };
   },
 
-  // ----- return_to (login navigation only) -----
-  setReturnTo(pathWithQuery) {
-    const v = (pathWithQuery || "").toString().trim();
-    if (!isProbablySafeReturnTo(v)) return;
-    ssSet(KEY.returnTo, v);
+  // ==========================
+  // getters
+  // ==========================
+  getAccountId() {
+    return _state.account_id;
   },
 
-  getReturnTo() {
-    return ssGet(KEY.returnTo);
+  getContractId() {
+    return _state.contract_id;
   },
 
-  /**
-   * ログイン成功後に使う：
-   * - return_to を1回だけ使って消す（ループ防止）
-   */
-  consumeReturnTo() {
-    const rt = ssGet(KEY.returnTo);
-    ssSet(KEY.returnTo, ""); // 必ず消す
-    return rt;
+  getPlanId() {
+    return _state.plan_id;
   },
 
-  // ----- reset (デバッグ用) -----
-  clearAppContext() {
-    // これは “ログイン状態” は消さず、アプリ状態だけ消す
-    ssSet(KEY.tenant, "");
-    ssSet(KEY.plan, "");
-    ssSet(KEY.role, "");
-    ssBoolSet(KEY.boot, false);
-    ssSet(KEY.bootAt, "");
-    _mem.account_id = "";
+  getTenantId() {
+    return _state.tenant_id;
+  },
+
+  // ==========================
+  // require 系（用途別）
+  // ==========================
+  requireContractId() {
+    if (!_state.contract_id) {
+      throw new Error("contract_id is required");
+    }
+    return _state.contract_id;
+  },
+
+  requireTenantId() {
+    if (!_state.tenant_id) {
+      throw new Error("tenant_id is required");
+    }
+    return _state.tenant_id;
+  },
+
+  // ==========================
+  // setters（画面遷移時に使用）
+  // ==========================
+  setTenantId(tenantId) {
+    _state.tenant_id = tenantId || null;
+    save();
+  },
+
+  clearTenant() {
+    _state.tenant_id = null;
+    save();
+  },
+
+  // ==========================
+  // 判定ユーティリティ
+  // ==========================
+  isBootstrapped() {
+    return _state.bootstrapped === true;
+  },
+
+  isQaOnlyPlan() {
+    return _state.plan_id === "qa_only";
+  },
+
+  hasContract() {
+    return !!_state.contract_id;
+  },
+
+  hasTenant() {
+    return !!_state.tenant_id;
+  },
+
+  // ==========================
+  // 完全リセット（logout 等）
+  // ==========================
+  reset() {
+    clear();
   },
 };
-
-/*
-使い方（例）
-
-// 1) tenant必須ページ（qa_generate.js の先頭など）
-import { context } from "./context.js";
-
-async function init() {
-  try {
-    // ログイン済み前提なら、ここで bootstrap（/v1/session）を叩いて確定
-    await context.bootstrap(apiFetch, { endpoint: "/v1/session" });
-
-    const tenantId = context.requireTenantId();
-    // 以後 tenantId を payload に必ず入れる
-  } catch (e) {
-    // tenantが無い/未ログイン等 → ここでUIを止める（サーバへ投げない）
-    // disableUploadButton(String(e));
-  }
-}
-
-// 2) 未ログイン時に login へ飛ばす直前
-context.setReturnTo(location.pathname + location.search);
-location.replace("./login.html");
-
-// 3) login 成功後
-const rt = context.consumeReturnTo();
-location.replace(rt || "./");
-*/
