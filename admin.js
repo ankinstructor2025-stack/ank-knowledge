@@ -8,6 +8,20 @@ import { createApi } from "./admin_api.js";
 import { createPricingModule } from "./admin_pricing.js";
 import { createContractModule } from "./admin_contract.js";
 import { createUsersModule } from "./admin_users.js";
+import { context } from "./shared/context.js";
+
+// === single-tab only: 別タブ遷移禁止 ===
+window.open = function () {
+  throw new Error("window.open is disabled (admin is single-tab only)");
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  // <a target="_blank"> を無効化
+  document.querySelectorAll('a[target="_blank"]').forEach(a => {
+    a.removeAttribute("target");
+    a.removeAttribute("rel");
+  });
+});
 
 const firebaseConfig = {
   apiKey: "AIzaSyBpHlwulq6lnbmBzNm0rEYNahWk7liD3BM",
@@ -49,6 +63,15 @@ onAuthStateChanged(auth, async (u) => {
   }
 
   document.body.style.display = "block";
+  // ★追加：ログイン時に作業コンテキストを確定（QA-only前提）
+  try {
+    await context.bootstrap(api.fetch.bind(api), { endpoint: "/v1/session" });
+  } catch (e) {
+    console.error("context bootstrap failed:", e);
+    // tenant が取れない＝作業不能。loginへ戻す（ループしない）
+    location.replace("./login.html");
+    return;
+  }
   state.currentUser = u;
 
   setActiveTab(dom, "contract");
