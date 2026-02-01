@@ -14,31 +14,6 @@ function isTrue(v) {
   return v === true || v === "true" || v === 1 || v === "1";
 }
 
-function pickTenantId(t) {
-  return t?.tenant_id || t?.id || t?.tenantId || "";
-}
-
-/**
- * tenants.html は account_id 必須なので、ここで必ず付与する
- */
-function gotoTenants(sess) {
-  const accountId =
-    sess?.account_id ||
-    sess?.account?.account_id ||
-    sess?.account?.id ||
-    sess?.accounts?.[0]?.account_id ||
-    sess?.accounts?.[0]?.id;
-
-  if (!accountId) {
-    console.error("account_id not found in /v1/session:", sess);
-    // ここで止める（勝手にloginへ戻さない）
-    // ＝無限ループを防ぐ
-    return;
-  }
-
-  goto(`./tenants.html?account_id=${encodeURIComponent(accountId)}`);
-}
-
 async function waitForAuthUser(timeoutMs = 3000) {
   return await new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -54,6 +29,22 @@ async function waitForAuthUser(timeoutMs = 3000) {
   });
 }
 
+function pickContractId(sess) {
+  return (
+    sess?.contract_id ||
+    sess?.context?.contract_id ||
+    ""
+  );
+}
+
+function pickPlanId(sess) {
+  return (
+    sess?.plan_id ||
+    sess?.context?.plan_id ||
+    ""
+  );
+}
+
 (async () => {
   // 1) 認証状態が確定するまで待つ（重要）
   const user = await waitForAuthUser(5000);
@@ -64,7 +55,7 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  // 3) session 取得（★修正：user を渡して統一）
+  // 3) session 取得（user を渡して統一）
   let sess;
   try {
     sess = await apiFetch(user, "/v1/session", { method: "GET" });
@@ -80,25 +71,22 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  // 5) tenants が無い/空なら tenants へ
-  const tenants = Array.isArray(sess?.tenants) ? sess.tenants : [];
-  if (tenants.length === 0) {
-    gotoTenants(sess);
+  // 5) 契約/プランで分岐（あなたの整理どおり）
+  const contractId = String(pickContractId(sess) || "").trim();
+  const planId = String(pickPlanId(sess) || "").trim();
+
+  // 契約が無い → テナント一覧（※パラメータ無し）
+  if (!contractId) {
+    goto("./tenants.html");
     return;
   }
 
-  // 6) 契約ありテナントを探す
-  const contracted = tenants.find(
-    (t) =>
-      isTrue(t?.has_contract) ||
-      isTrue(t?.has_active_contract) ||
-      isTrue(t?.contract_active)
-  );
-
-  if (!contracted) {
-    gotoTenants(sess);
+  // プランがQAのみ → QA作成
+  if (planId === "qa_only") {
+    goto("./qa_generate.html");
     return;
   }
 
+  // それ以外：現状維持（まずはQA作成へ）
   goto("./qa_generate.html");
 })();

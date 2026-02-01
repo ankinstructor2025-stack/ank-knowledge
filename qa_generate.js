@@ -17,13 +17,6 @@ const API_QA_PROMPT = "/v1/admin/qa-prompt";
 const API_JUDGE_METHOD = "/v1/admin/dialogues/judge-method";
 
 // =====================
-// URL params（必要なら使う）
-// =====================
-const params = new URLSearchParams(location.search);
-const tenantId = params.get("tenant_id");     // 画面によっては使わない
-const contractIdParam = params.get("contract_id");
-
-// =====================
 // DOMユーティリティ（null安全）
 // =====================
 function $(id) {
@@ -50,7 +43,7 @@ function setPromptBox(obj) {
 }
 
 // =====================
-// tenants.js と同じ：auth確定待ち
+// auth確定待ち
 // =====================
 async function waitForAuthUser(timeoutMs = 8000) {
   return await new Promise((resolve) => {
@@ -68,7 +61,6 @@ async function waitForAuthUser(timeoutMs = 8000) {
 }
 
 function redirectToLogin() {
-  // return_to は「今のURL（クエリ含む）」を丸ごと返す
   const rt = encodeURIComponent(location.pathname + location.search);
   location.replace(`./login.html?return_to=${rt}`);
 }
@@ -88,14 +80,20 @@ async function apiCall(user, path, { method = "GET", body = null } = {}) {
 // アップロード関連
 // =====================
 async function createUploadUrl(user, file) {
+  // tenant は optional。あれば tenant_id、無ければ contract_id を使う（QAのみ対応）
+  const tenantId = context.getTenantId();
+  const contractId = context.requireContractId();
+
+  const body = {
+    filename: file.name,
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size,
+    ...(tenantId ? { tenant_id: tenantId } : { contract_id: contractId }),
+  };
+
   return await apiCall(user, API_UPLOAD_URL, {
     method: "POST",
-    body: {
-      tenant_id: context.requireTenantId(),
-      filename: file.name,
-      content_type: file.type || "application/octet-stream",
-      size_bytes: file.size,
-    },
+    body,
   });
 }
 
@@ -122,7 +120,8 @@ async function finalizeUpload(user, meta, file) {
 // =====================
 // QA化チェック（judge-method）
 // =====================
-async function judgeMethod(user, objectKey, contractId) {
+async function judgeMethod(user, objectKey) {
+  const contractId = context.requireContractId();
   return await apiCall(user, API_JUDGE_METHOD, {
     method: "POST",
     body: {
@@ -140,19 +139,18 @@ async function getQaPrompt(user, mode) {
 }
 
 // =====================
-// 初期：認証だけ先に確定させる（未ログインならloginへ）
+// 初期：認証→sessionでcontext確定
 // =====================
 (async () => {
   setStatus("認証確認中…", "ok");
   const user = await waitForAuthUser(8000);
 
   if (!user) {
-    // 画面に残すより、tenants.js と同様にloginへ戻す
     redirectToLogin();
     return;
   }
 
-  // ★追加（必要最低限）：この画面でも /v1/session で context を確定させる
+  // この画面でも /v1/session で context を確定（tenant optional / contract+planが主）
   try {
     await context.bootstrap(
       (path, opts) => apiCall(user, path, opts),
@@ -160,9 +158,18 @@ async function getQaPrompt(user, mode) {
     );
   } catch (e) {
     console.error("context.bootstrap failed:", e);
-    setStatus("テナント情報を取得できません。テナント一覧で選択してください。", "err");
-    location.replace("./tenants.html");  }
+    // loginへ戻すと return_to で戻ってきてループしやすいので、ここは止める
+    setStatus("セッション取得に失敗しました。時間をおいて再読み込みしてください。", "err");
     return;
+  }
+
+  // QAのみユーザーはここに来るのが正しいので、contract が無い場合だけ止める
+  try {
+    context.requireContractId();
+  } catch {
+    setStatus("契約情報がありません。契約状態を確認してください。", "err");
+    return;
+  }
 
   setStatus("準備完了", "ok");
 })();
@@ -189,16 +196,13 @@ if (btn) {
         return;
       }
 
-      // tenants.js と同様：auth.currentUser を信用せず「確定待ち」も踏む
+      // auth.currentUser を信用せず確定待ちも踏む
       const user = auth.currentUser || await waitForAuthUser(8000);
       if (!user) {
         setStatus("ログインしていません（not signed in）", "err");
         redirectToLogin();
         return;
       }
-
-      // contract_id の取り方：param → window → 空（空ならサーバ側で弾く想定）
-      const contractId = contractIdParam || window.contractId || "";
 
       setStatus("アップロードURL取得中…", "ok");
       const meta = await createUploadUrl(user, file);
@@ -214,7 +218,7 @@ if (btn) {
       setStatus("QA化チェック中…", "ok");
       setKpi("判定中", meta.object_key, "-");
 
-      const judge = await judgeMethod(user, meta.object_key, contractId);
+      const judge = await judgeMethod(user, meta.object_key);
       if (!judge) return;
 
       if (!judge.can_extract_qa) {
