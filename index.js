@@ -100,31 +100,5 @@ async function waitForAuthUser(timeoutMs = 3000) {
     return;
   }
 
-  const tenantId = pickTenantId(contracted);
-  if (!tenantId) {
-    gotoTenants(sess);
-    return;
-  }
-
-  // 7) QA作成へ（★ここだけ修正：contract_id / account_id を付与）
-  const accountId =
-    contracted?.account_id ||
-    sess?.account_id ||
-    sess?.account?.account_id ||
-    sess?.account?.id ||
-    sess?.accounts?.[0]?.account_id ||
-    sess?.accounts?.[0]?.id ||
-    "";
-
-  // 契約=テナント1:1の暫定：contract_id が取れない場合は tenantId を入れる
-  const contractId =
-    contracted?.contract_id ||
-    contracted?.contract?.contract_id ||
-    tenantId;
-
-  goto(
-    `./qa_generate.html?tenant_id=${encodeURIComponent(tenantId)}` +
-    `&contract_id=${encodeURIComponent(contractId)}` +
-    `&account_id=${encodeURIComponent(accountId)}`
-  );
+  goto("./qa_generate.html");
 })();
