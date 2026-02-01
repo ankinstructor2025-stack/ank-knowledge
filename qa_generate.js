@@ -160,10 +160,9 @@ async function getQaPrompt(user, mode) {
     );
   } catch (e) {
     console.error("context.bootstrap failed:", e);
-    setStatus("セッション取得に失敗しました。再ログインしてください。", "err");
-    redirectToLogin();
+    setStatus("テナント情報を取得できません。テナント一覧で選択してください。", "err");
+    location.replace("./tenants.html");  }
     return;
-  }
 
   setStatus("準備完了", "ok");
 })();
