@@ -152,6 +152,19 @@ async function getQaPrompt(user, mode) {
     return;
   }
 
+  // ★追加（必要最低限）：この画面でも /v1/session で context を確定させる
+  try {
+    await context.bootstrap(
+      (path, opts) => apiCall(user, path, opts),
+      { endpoint: "/v1/session" }
+    );
+  } catch (e) {
+    console.error("context.bootstrap failed:", e);
+    setStatus("セッション取得に失敗しました。再ログインしてください。", "err");
+    redirectToLogin();
+    return;
+  }
+
   setStatus("準備完了", "ok");
 })();
 
